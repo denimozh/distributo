@@ -95,7 +95,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section - FIXED z-index */}
-      <section className="relative pt-32 pb-20 px-6">
+      <section className="relative pt-32 pb-20 px-6 h-[100vh]">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-20 left-10 w-72 h-72 bg-blue-200/30 rounded-full blur-3xl" />
           <div className="absolute top-40 right-20 w-96 h-96 bg-indigo-200/20 rounded-full blur-3xl" />
@@ -155,7 +155,7 @@ export default function LandingPage() {
           </div>
 
           {/* Hero Visual - LOWER z-index */}
-          <div className="mt-16 relative z-10">
+          <div className="mt-24 relative z-10">
             <div className="relative max-w-3xl mx-auto flex items-center justify-center">
               <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" className="text-white">
