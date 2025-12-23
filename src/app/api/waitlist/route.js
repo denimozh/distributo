@@ -105,7 +105,7 @@ export async function POST(request) {
     }
 
     // TODO: In production, also save to Supabase:
-    // await supabase.from('waitlist').insert({ email: normalizedEmail, source, position });
+    await supabase.from('waitlist').insert({ email: normalizedEmail, source, position });
 
     return NextResponse.json({
       success: true,
