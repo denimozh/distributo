@@ -1,19 +1,24 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Supabase
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-// In production, replace this with your database (Supabase, etc.)
-// This is a simple in-memory store for development
-const waitlist = [];
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { email, source, timestamp } = body;
+    const { email, source } = body;
 
     // Validate email
-    if (!email || !email.includes('@')) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
       return NextResponse.json(
         { success: false, message: 'Please enter a valid email address' },
         { status: 400 }
@@ -22,29 +27,47 @@ export async function POST(request) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check for duplicate (in production, check your database)
-    const existingEntry = waitlist.find(entry => entry.email === normalizedEmail);
-    if (existingEntry) {
+    // Check for existing entry in Supabase
+    const { data: existing } = await supabase
+      .from('waitlist')
+      .select('id')
+      .eq('email', normalizedEmail)
+      .single();
+
+    if (existing) {
       return NextResponse.json(
         { success: false, message: "You're already on the waitlist!" },
         { status: 409 }
       );
     }
 
-    // Add to waitlist
-    waitlist.push({
-      email: normalizedEmail,
-      timestamp: timestamp || new Date().toISOString(),
-      source: source || 'landing_page'
-    });
+    // Insert into Supabase
+    const { data, error } = await supabase
+      .from('waitlist')
+      .insert({
+        email: normalizedEmail,
+        source: source || 'landing_page'
+      })
+      .select()
+      .single();
 
-    const position = waitlist.length;
+    if (error) {
+      console.error('Supabase insert error:', error);
+      throw new Error('Failed to save to database');
+    }
+
+    // Get waitlist position (total count)
+    const { count } = await supabase
+      .from('waitlist')
+      .select('*', { count: 'exact', head: true });
+
+    const position = count || 1;
     console.log('New waitlist signup:', normalizedEmail, '| Position:', position);
 
     // Send welcome email via Resend
     try {
       await resend.emails.send({
-        from: 'Denis <hello@distributo.dev>', // Change to your verified domain
+        from: 'Denis <hello@distributo.io>', // Change to your verified domain
         to: normalizedEmail,
         subject: "You're in 🎉 Welcome to the Distributo waitlist",
         html: `
@@ -104,9 +127,6 @@ export async function POST(request) {
       console.error('Failed to send welcome email:', emailError);
     }
 
-    // TODO: In production, also save to Supabase:
-    await supabase.from('waitlist').insert({ email: normalizedEmail, source, position });
-
     return NextResponse.json({
       success: true,
       message: "You're on the list!",
@@ -123,8 +143,16 @@ export async function POST(request) {
 }
 
 export async function GET() {
-  // Return waitlist count (for admin or social proof)
-  return NextResponse.json({
-    count: waitlist.length
-  });
+  try {
+    const { count, error } = await supabase
+      .from('waitlist')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) throw error;
+
+    return NextResponse.json({ count: count || 0 });
+  } catch (error) {
+    console.error('Failed to get waitlist count:', error);
+    return NextResponse.json({ count: 0 });
+  }
 }
