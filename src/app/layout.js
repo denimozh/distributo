@@ -1,4 +1,5 @@
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next"
 
 export const metadata = {
   title: 'Distributo | Marketing Automation for Founders',
@@ -69,6 +70,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body>{children}</body>
+      <Analytics />
     </html>
   );
 }
