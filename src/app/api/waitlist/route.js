@@ -87,7 +87,7 @@ export async function POST(request) {
 
   <h1 style="font-size: 24px; margin-bottom: 24px;">Hey!</h1>
   
-  <p>You're officially on the Distributo waitlist. Thanks for being early — it means a lot.</p>
+  <p>You're officially on the Distributo waitlist. Thanks for being early - it means a lot.</p>
   
   <div style="background: #f8fafc; border-radius: 12px; padding: 24px; margin: 24px 0; border-left: 4px solid #3B82F6;">
     <strong style="color: #1a1a2e;">Quick reminder of what we're building:</strong>
@@ -113,7 +113,7 @@ export async function POST(request) {
   <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;">
   
   <p style="color: #9ca3af; font-size: 14px;">
-    P.S. — Want to follow along while I build this in public? 
+    P.S. - Want to follow along while I build this in public? 
     <a href="https://x.com/denimozh_uk" style="color: #3B82F6;">Follow me on X →</a>
   </p>
   

@@ -1,5 +1,4 @@
-"use client";
-
+"use client"
 import { useState, useEffect } from "react";
 
 export default function LandingPage() {
@@ -200,7 +199,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-20">
             <h2 className="text-4xl md:text-5xl font-serif mb-6">Everything You Need to<br /><span className="italic text-gray-400">Automate</span> Your Marketing</h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">Four powerful pipelines working together to keep your audience engaged while you focus on building.</p>
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto">Five powerful features working together to keep your audience engaged while you focus on building.</p>
           </div>
 
           <FeatureSection
@@ -246,6 +245,17 @@ export default function LandingPage() {
             visual={<GitHubPipelineVisual />}
             reversed={true}
           />
+
+          <FeatureSection
+            title="Burnt Out Mode"
+            subtitle="Your autopilot for bad days"
+            description="Too exhausted to post? Toggle on Burnt Out Mode and we'll keep your content flowing. We learn your voice, understand your niche, and generate posts that sound exactly like you."
+            icon={<BatteryIcon className="w-5 h-5" />}
+            color="amber"
+            features={["Learns your unique voice from past posts", "Generates content matching your niche", "Auto-posts on your schedule when you miss", "Review mode or full autopilot"]}
+            visual={<BurntOutModeVisual />}
+            reversed={false}
+          />
         </div>
       </section>
 
@@ -265,6 +275,7 @@ export default function LandingPage() {
 
           <div className="flex flex-wrap justify-center gap-3 mb-12">
             {[
+              { name: "Burnt Out Mode", icon: <BatteryIcon className="w-5 h-5" /> },
               { name: "GitHub Autopilot", icon: <GitHubIcon className="w-5 h-5" /> },
               { name: "Reddit Pipeline", icon: <RedditIcon className="w-5 h-5" /> },
               { name: "X Pipeline", icon: <XIcon className="w-5 h-5" /> },
@@ -282,10 +293,11 @@ export default function LandingPage() {
           </div>
 
           <div className="relative min-h-[500px]">
-            {activePipeline === 0 && <GitHubAutopilotFlow />}
-            {activePipeline === 1 && <RedditPipelineFlow />}
-            {activePipeline === 2 && <XPipelineFlow />}
-            {activePipeline === 3 && <LinkedInPipelineFlow />}
+            {activePipeline === 0 && <BurntOutModeFlow />}
+            {activePipeline === 1 && <GitHubAutopilotFlow />}
+            {activePipeline === 2 && <RedditPipelineFlow />}
+            {activePipeline === 3 && <XPipelineFlow />}
+            {activePipeline === 4 && <LinkedInPipelineFlow />}
           </div>
         </div>
       </section>
@@ -299,9 +311,9 @@ export default function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <PricingCard name="Pro" price={19} description="For founders getting started" features={["3 X posts/day", "10 Reddit posts/week", "5 LinkedIn posts/week", "10 reply suggestions/day", "5 tracked accounts", "1 project", "GitHub Autopilot", "30 days analytics"]} highlighted={false} />
-            <PricingCard name="Growth" price={39} description="For serious builders" features={["5 X posts/day", "20 Reddit posts/week", "10 LinkedIn posts/week", "20 reply suggestions/day", "15 tracked accounts", "3 projects", "GitHub Autopilot", "90 days analytics"]} highlighted={true} />
-            <PricingCard name="Scale" price={79} description="For agencies & power users" features={["10 X posts/day", "Unlimited Reddit posts", "20 LinkedIn posts/week", "Unlimited replies", "30 tracked accounts", "10 projects", "GitHub Autopilot", "1 year analytics"]} highlighted={false} />
+            <PricingCard name="Pro" price={19} description="For founders getting started" features={["3 X posts/day", "10 Reddit posts/week", "5 LinkedIn posts/week", "10 reply suggestions/day", "5 tracked accounts", "1 project", "GitHub Autopilot", "Burnt Out Mode", "30 days analytics"]} highlighted={false} />
+            <PricingCard name="Growth" price={39} description="For serious builders" features={["5 X posts/day", "20 Reddit posts/week", "10 LinkedIn posts/week", "20 reply suggestions/day", "15 tracked accounts", "3 projects", "GitHub Autopilot", "Burnt Out Mode", "90 days analytics"]} highlighted={true} />
+            <PricingCard name="Scale" price={79} description="For agencies & power users" features={["10 X posts/day", "Unlimited Reddit posts", "20 LinkedIn posts/week", "Unlimited replies", "30 tracked accounts", "10 projects", "GitHub Autopilot", "Burnt Out Mode", "1 year analytics"]} highlighted={false} />
           </div>
         </div>
       </section>
@@ -358,6 +370,142 @@ export default function LandingPage() {
         </div>
         <div className="text-center mt-8 text-sm text-gray-400">© 2025 Distributo. All rights reserved.</div>
       </footer>
+    </div>
+  );
+}
+
+// ============================================
+// BURNT OUT MODE FLOW VISUALIZATION
+// ============================================
+
+function BurntOutModeFlow() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setStep((prev) => (prev + 1) % 5), 2500);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="animate-slide-in">
+      <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div className="relative">
+          <div className="space-y-6">
+            <FlowStep active={step === 0} icon={<BatteryIcon className="w-8 h-8 text-white" />} bgColor={step === 0 ? 'bg-amber-500' : 'bg-white/10'} title="You're burnt out" subtitle="No energy to post today" />
+            <div className="ml-8 w-0.5 h-8 bg-gradient-to-b from-amber-500/50 to-blue-500/50" />
+            <FlowStep active={step === 1} icon={<svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} bgColor={step === 1 ? 'bg-blue-500' : 'bg-white/10'} title="Scheduled post time hits" subtitle="9:00 AM — No draft ready" />
+            <div className="ml-8 w-0.5 h-8 bg-gradient-to-b from-blue-500/50 to-indigo-500/50" />
+            <FlowStep active={step === 2} icon={<svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>} bgColor={step === 2 ? 'bg-indigo-500' : 'bg-white/10'} title="AI generates in your voice" subtitle="Using your past posts + niche" />
+            <div className="ml-8 w-0.5 h-8 bg-gradient-to-b from-indigo-500/50 to-green-500/50" />
+            <FlowStep active={step === 3} icon={<svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} bgColor={step === 3 ? 'bg-green-500' : 'bg-white/10'} title="Content posted automatically" subtitle="Your streak stays alive 🔥" />
+            <div className={`flex items-center gap-4 mt-6 p-4 rounded-xl border border-dashed transition-all ${step >= 4 ? 'border-amber-500/50 opacity-100' : 'border-gray-600 opacity-30'}`}>
+              <svg className="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+              <div><div className="text-lg font-semibold">You get notified</div><div className="text-gray-400 text-sm">"We posted for you — check it out"</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="text-sm font-medium text-gray-400 mb-4">What we know about you:</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <div className="text-xs text-gray-500 mb-1">Your niche</div>
+              <div className="text-white font-medium">SaaS / Dev Tools</div>
+            </div>
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <div className="text-xs text-gray-500 mb-1">Your tone</div>
+              <div className="text-white font-medium">Casual, honest</div>
+            </div>
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <div className="text-xs text-gray-500 mb-1">Voice samples</div>
+              <div className="text-white font-medium">47 past posts</div>
+            </div>
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+              <div className="text-xs text-gray-500 mb-1">Best content type</div>
+              <div className="text-white font-medium">Build updates</div>
+            </div>
+          </div>
+          
+          <div className={`p-4 rounded-xl bg-amber-900/30 border border-amber-700/50 transition-all duration-500 mt-6 ${step >= 2 ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'}`}>
+            <div className="flex items-center gap-2 mb-3">
+              <BatteryIcon className="w-4 h-4 text-amber-400" />
+              <span className="text-sm text-amber-400">Generated for you</span>
+              <span className="ml-auto text-xs text-green-400 bg-green-500/20 px-2 py-1 rounded-full">Auto-posted</span>
+            </div>
+            <p className="text-white">Week 8 update on Distributo:<br /><br />Finally nailed the auth flow. Small win, but these add up.<br /><br />Shipping daily, even when it's boring.<br /><br />#buildinpublic</p>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white/5 border border-white/10 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Burnt Out Mode</div>
+                <div className="text-xs text-gray-500">Auto-post when you miss schedule</div>
+              </div>
+              <div className="w-12 h-6 bg-amber-500 rounded-full relative cursor-pointer">
+                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// BURNT OUT MODE VISUAL (for Features section)
+// ============================================
+
+function BurntOutModeVisual() {
+  return (
+    <div className="relative bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl p-8 border border-amber-100">
+      {/* Status cards */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-amber-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+              <BatteryIcon className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <div className="font-medium">Burnt Out Mode</div>
+              <div className="text-sm text-gray-500">Active since Monday</div>
+            </div>
+          </div>
+          <div className="w-12 h-6 bg-amber-500 rounded-full relative">
+            <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow" />
+          </div>
+        </div>
+
+        <div className="p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-medium text-gray-500">Auto-generated today</span>
+          </div>
+          <p className="text-sm text-gray-700">
+            "Small update: Fixed that annoying bug where emails weren't sending.
+            <br /><br />
+            Not glamorous, but it matters. Shipping daily. 🛠️"
+          </p>
+          <div className="flex gap-2 mt-4">
+            <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">X</span>
+            <span className="px-2 py-1 bg-blue-100 text-blue-600 text-xs rounded-full">LinkedIn</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 bg-white rounded-lg border border-gray-100 text-center">
+            <div className="text-2xl font-bold text-amber-600">7</div>
+            <div className="text-xs text-gray-500">Days covered</div>
+          </div>
+          <div className="p-3 bg-white rounded-lg border border-gray-100 text-center">
+            <div className="text-2xl font-bold text-green-600">12</div>
+            <div className="text-xs text-gray-500">Posts made</div>
+          </div>
+          <div className="p-3 bg-white rounded-lg border border-gray-100 text-center">
+            <div className="text-2xl font-bold text-blue-600">🔥</div>
+            <div className="text-xs text-gray-500">Streak alive</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -501,7 +649,7 @@ function XPipelineFlow() {
               <span className="text-xs text-gray-500">+10 more</span>
             </div>
           </div>
-          <InfoCard icon={<svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>} iconBg="bg-blue-500/20" title="Burnt out and can't post?" subtitle="Take a rest - we'll do the posting for you" description="We analyze your past tweets to understand your voice, then generate contextual posts that sound like you - schedule them for you and then post them" />
+          <InfoCard icon={<svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>} iconBg="bg-blue-500/20" title="Reply Finder" subtitle="Find high-value conversations" description="We surface posts from accounts you track that have high engagement potential. Reply with AI-suggested responses that match your voice." />
           <InfoCard icon={<svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>} iconBg="bg-purple-500/20" title="Threads too?" subtitle="Schedule entire threads" description="Plan your build-in-public threads in advance. We'll post them at optimal times." />
         </div>
 
@@ -591,6 +739,7 @@ function FeatureSection({ title, subtitle, description, icon, color, features, v
     gray: 'bg-gray-100 text-gray-700 border-gray-200',
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
     purple: 'bg-purple-50 text-purple-600 border-purple-100',
+    amber: 'bg-amber-50 text-amber-600 border-amber-100',
   };
 
   return (
@@ -858,7 +1007,6 @@ function PricingCard({ name, price, description, features, highlighted }) {
     </div>
   );
 }
-
 // ============================================
 // ICONS
 // ============================================
@@ -877,4 +1025,22 @@ function LinkedInIcon({ className = "w-6 h-6" }) {
 
 function GitHubIcon({ className = "w-6 h-6" }) {
   return <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>;
+}
+
+function BatteryIcon({ className = "w-6 h-6" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {/* Battery body */}
+      <rect x="2" y="7" width="18" height="10" rx="2" ry="2" />
+      {/* Battery tip */}
+      <rect x="20" y="10" width="2" height="4" rx="1" />
+      {/* Battery level (can remove if you want empty battery) */}
+      <rect x="4" y="9" width="12" height="6" rx="1" />
+    </svg>
+  );
 }
