@@ -67,7 +67,7 @@ export async function POST(request) {
     // Send welcome email via Resend
     try {
       await resend.emails.send({
-        from: 'Denis <hello@distributo.io>', // Change to your verified domain
+        from: 'Denis <hello@distributo.dev>', // Change to your verified domain
         to: normalizedEmail,
         subject: "You're in 🎉 Welcome to the Distributo waitlist",
         html: `
@@ -91,7 +91,7 @@ export async function POST(request) {
   
   <div style="background: #f8fafc; border-radius: 12px; padding: 24px; margin: 24px 0; border-left: 4px solid #3B82F6;">
     <strong style="color: #1a1a2e;">Quick reminder of what we're building:</strong>
-    <p style="margin: 12px 0 0 0; color: #4b5563;">Distributo turns your GitHub commits into marketing content for Reddit, X, and LinkedIn. You ship code, we help you ship the content.</p>
+    <p style="margin: 12px 0 0 0; color: #4b5563;">Distributo automates your marketing content for Reddit, X, and LinkedIn. You ship code, we help you ship the content.</p>
   </div>
   
   <h2 style="font-size: 18px; margin-top: 32px;">What happens next:</h2>

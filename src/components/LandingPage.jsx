@@ -59,18 +59,6 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#FAFBFC] text-[#1a1a2e] overflow-x-hidden font-sans">
-      <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');
-        .font-serif { font-family: 'Instrument Serif', Georgia, serif; }
-        .font-sans { font-family: 'DM Sans', system-ui, sans-serif; }
-        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
-        @keyframes slide-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-        .animate-float { animation: float 6s ease-in-out infinite; }
-        .animate-float-delayed { animation: float 6s ease-in-out infinite 2s; }
-        .animate-slide-in { animation: slide-in 0.5s ease-out forwards; }
-        .gradient-text { background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.9); }
-      `}</style>
 
       {/* Navigation */}
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrollY > 50 ? 'bg-white/80 backdrop-blur-lg shadow-sm' : 'bg-transparent'}`}>
