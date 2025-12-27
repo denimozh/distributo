@@ -58,7 +58,6 @@ export default function DashboardLayout({ children }) {
     { section: 'CONTENT', items: [
       { name: 'Home', href: '/dashboard', icon: HomeIcon },
       { name: 'Calendar', href: '/dashboard/calendar', icon: CalendarIcon },
-      { name: 'AI Draft Generator', href: '/dashboard/drafts', icon: SparklesIcon },
       { name: 'All Posts', href: '/dashboard/content', icon: DocumentIcon },
       { name: 'Ideas', href: '/dashboard/ideas', icon: LightbulbIcon },
     ]},
