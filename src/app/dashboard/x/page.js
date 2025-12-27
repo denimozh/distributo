@@ -255,9 +255,17 @@ function CommunitiesManager({ communities, onUpdate }) {
 
       {/* Note about X API */}
       <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-        <h3 className="font-medium text-amber-900 mb-1">⚠️ Important Note</h3>
-        <p className="text-sm text-amber-700">
-          X's API doesn't support posting directly to Communities. Posts scheduled to communities will be posted to your timeline with a note about the intended community. You can then manually share to the community from X.
+        <h3 className="font-medium text-amber-900 mb-1">⚠️ How Community Scheduling Works</h3>
+        <p className="text-sm text-amber-700 mb-2">
+          X's API doesn't support posting directly to Communities. Here's what happens:
+        </p>
+        <ol className="text-sm text-amber-700 list-decimal list-inside space-y-1">
+          <li>Your post publishes to your <strong>main timeline</strong></li>
+          <li>You get a reminder notification with the community link</li>
+          <li>You manually share/repost to the community from X</li>
+        </ol>
+        <p className="text-sm text-amber-600 mt-2 italic">
+          This is a limitation of X's API, not Distributo.
         </p>
       </div>
     </div>
@@ -380,10 +388,20 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to post');
+      
+      // Check if there was a community selected
+      const communityData = communities.find(c => c.community_id === selectedCommunity);
+      
       setContent('');
       setSelectedCommunity('');
-      setSuccess('🎉 Posted to X!');
-      setTimeout(() => setSuccess(''), 5000);
+      
+      if (communityData) {
+        // Show success with community reminder
+        setSuccess(`🎉 Posted to X! Now share to "${communityData.name}" → x.com/i/communities/${communityData.community_id}`);
+      } else {
+        setSuccess('🎉 Posted to X!');
+      }
+      setTimeout(() => setSuccess(''), 10000); // Longer timeout for community reminder
       onPostCreated();
     } catch (err) {
       setError(err.message);
@@ -537,7 +555,12 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
 
         {/* Community Selection */}
         <div className="px-4 pb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">👥 Choose Audience</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            👥 Post to Timeline + Remind to Share
+          </label>
+          <p className="text-xs text-gray-500 mb-3">
+            Select a community to get a reminder to share there after posting (X API limitation)
+          </p>
           <div className="space-y-2">
             {/* Timeline Option */}
             <button

@@ -1,114 +1,144 @@
-import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
 
-// Initialize Supabase with service role key (bypasses RLS)
+// Use service role to bypass RLS
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// This endpoint is called by Vercel Cron every 5 minutes
-// Configure in vercel.json: { "crons": [{ "path": "/api/cron/post-scheduled", "schedule": "*/5 * * * *" }] }
-
 export async function GET(request) {
-  // Verify cron secret (optional but recommended)
+  // Verify cron secret in production
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // In development, allow without secret
-    if (process.env.NODE_ENV === 'production') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (process.env.NODE_ENV === 'production' && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const now = new Date().toISOString();
-    
-    // Get all scheduled posts that are due
-    const { data: scheduledPosts, error: fetchError } = await supabase
+    console.log(`[CRON] Running at ${now}`);
+
+    // Get posts that are due to be posted
+    const { data: posts, error: fetchError } = await supabase
       .from('posts')
       .select(`
         *,
-        connected_accounts!inner (
-          id,
-          platform,
+        connected_accounts!inner(
           access_token,
           refresh_token,
           token_expires_at,
-          platform_username,
-          user_id
+          platform_user_id,
+          platform_username
         )
       `)
       .eq('status', 'scheduled')
-      .lte('scheduled_at', now)
       .eq('platform', 'x')
-      .limit(10); // Process max 10 at a time
+      .lte('scheduled_at', now)
+      .limit(10);
 
     if (fetchError) {
-      console.error('Error fetching scheduled posts:', fetchError);
-      return NextResponse.json({ error: 'Failed to fetch posts' }, { status: 500 });
+      console.error('[CRON] Fetch error:', fetchError);
+      throw fetchError;
     }
 
-    if (!scheduledPosts || scheduledPosts.length === 0) {
-      return NextResponse.json({ message: 'No posts to process', processed: 0 });
+    if (!posts || posts.length === 0) {
+      console.log('[CRON] No posts due');
+      return NextResponse.json({ message: 'No posts due', processed: 0 });
     }
 
-    console.log(`Processing ${scheduledPosts.length} scheduled posts...`);
+    console.log(`[CRON] Found ${posts.length} posts to process`);
 
-    const results = [];
+    let processed = 0;
+    let failed = 0;
 
-    for (const post of scheduledPosts) {
+    for (const post of posts) {
       try {
-        // Mark as posting
-        await supabase
-          .from('posts')
-          .update({ status: 'posting' })
-          .eq('id', post.id);
-
-        // Get fresh token if expired
-        let accessToken = post.connected_accounts.access_token;
+        const account = post.connected_accounts;
         
-        if (post.connected_accounts.token_expires_at && 
-            new Date(post.connected_accounts.token_expires_at) < new Date()) {
-          accessToken = await refreshToken(post.connected_accounts);
+        // Check if token needs refresh
+        let accessToken = account.access_token;
+        const tokenExpiry = new Date(account.token_expires_at);
+        
+        if (tokenExpiry <= new Date()) {
+          console.log(`[CRON] Refreshing token for post ${post.id}`);
+          
+          // Refresh the token
+          const tokenResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Authorization': `Basic ${Buffer.from(`${process.env.X_CLIENT_ID}:${process.env.X_CLIENT_SECRET}`).toString('base64')}`
+            },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: account.refresh_token,
+              client_id: process.env.X_CLIENT_ID,
+            })
+          });
+
+          if (!tokenResponse.ok) {
+            throw new Error('Failed to refresh token');
+          }
+
+          const tokenData = await tokenResponse.json();
+          accessToken = tokenData.access_token;
+
+          // Update tokens in database
+          await supabase
+            .from('connected_accounts')
+            .update({
+              access_token: tokenData.access_token,
+              refresh_token: tokenData.refresh_token,
+              token_expires_at: new Date(Date.now() + tokenData.expires_in * 1000).toISOString(),
+            })
+            .eq('id', account.id);
         }
 
         // Post to X
+        console.log(`[CRON] Posting tweet for post ${post.id}`);
+        
         const tweetResponse = await fetch('https://api.twitter.com/2/tweets', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ text: post.content }),
+          body: JSON.stringify({ text: post.content })
         });
 
-        const tweetData = await tweetResponse.json();
-
         if (!tweetResponse.ok) {
-          throw new Error(tweetData.detail || tweetData.title || 'X API error');
+          const errorData = await tweetResponse.json();
+          throw new Error(errorData.detail || errorData.title || 'Failed to post tweet');
         }
 
-        const tweetId = tweetData.data.id;
-        const tweetUrl = `https://x.com/${post.connected_accounts.platform_username}/status/${tweetId}`;
+        const tweetData = await tweetResponse.json();
+        console.log(`[CRON] Tweet posted successfully: ${tweetData.data.id}`);
 
-        // Update post as posted
+        // Update post status
+        const updateData = {
+          status: 'posted',
+          posted_at: new Date().toISOString(),
+          external_id: tweetData.data.id,
+          external_url: `https://x.com/${account.platform_username}/status/${tweetData.data.id}`,
+        };
+
         await supabase
           .from('posts')
-          .update({
-            status: 'posted',
-            posted_at: new Date().toISOString(),
-            external_id: tweetId,
-            external_url: tweetUrl,
-          })
+          .update(updateData)
           .eq('id', post.id);
 
-        results.push({ id: post.id, status: 'success', tweetId });
-        console.log(`✅ Posted: ${post.id} -> ${tweetUrl}`);
+        // If post had a community, log reminder (could send notification in future)
+        if (post.community_id) {
+          console.log(`[CRON] Reminder: Share post ${tweetData.data.id} to community ${post.community_id}`);
+          // TODO: Send push notification or email reminder to share to community
+        }
+
+        processed++;
 
       } catch (postError) {
-        console.error(`❌ Failed to post ${post.id}:`, postError);
+        console.error(`[CRON] Error posting ${post.id}:`, postError);
         
-        // Update post as failed
+        // Mark as failed
         await supabase
           .from('posts')
           .update({
@@ -118,60 +148,26 @@ export async function GET(request) {
           })
           .eq('id', post.id);
 
-        results.push({ id: post.id, status: 'failed', error: postError.message });
+        failed++;
       }
     }
 
+    console.log(`[CRON] Completed. Processed: ${processed}, Failed: ${failed}`);
+
     return NextResponse.json({
-      message: 'Cron job completed',
-      processed: results.length,
-      results,
+      success: true,
+      processed,
+      failed,
+      timestamp: now
     });
 
   } catch (error) {
-    console.error('Cron job error:', error);
+    console.error('[CRON] Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-// Refresh X token
-async function refreshToken(account) {
-  const clientId = process.env.X_CLIENT_ID;
-  const clientSecret = process.env.X_CLIENT_SECRET;
-  
-  if (!account.refresh_token) {
-    throw new Error('No refresh token');
-  }
-
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
-  const response = await fetch('https://api.twitter.com/2/oauth2/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${basicAuth}`,
-    },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: account.refresh_token,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error('Token refresh failed');
-  }
-
-  const tokens = await response.json();
-
-  // Update tokens
-  await supabase
-    .from('connected_accounts')
-    .update({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || account.refresh_token,
-      token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-    })
-    .eq('id', account.id);
-
-  return tokens.access_token;
+// Also allow POST for manual testing
+export async function POST(request) {
+  return GET(request);
 }
