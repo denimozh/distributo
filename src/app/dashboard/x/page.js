@@ -1,10 +1,121 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 
+// ==========================================
+// TOAST SYSTEM (inline for simplicity)
+// ==========================================
+
+const ToastContext = createContext(null);
+
+const toastStyles = {
+  success: { bg: 'bg-green-50 border-green-200', icon: '✅', iconBg: 'bg-green-100', text: 'text-green-800', progress: 'bg-green-500' },
+  error: { bg: 'bg-red-50 border-red-200', icon: '❌', iconBg: 'bg-red-100', text: 'text-red-800', progress: 'bg-red-500' },
+  warning: { bg: 'bg-amber-50 border-amber-200', icon: '⚠️', iconBg: 'bg-amber-100', text: 'text-amber-800', progress: 'bg-amber-500' },
+  info: { bg: 'bg-blue-50 border-blue-200', icon: 'ℹ️', iconBg: 'bg-blue-100', text: 'text-blue-800', progress: 'bg-blue-500' },
+};
+
+function ToastItem({ id, type = 'info', title, message, duration = 5000, onClose, action }) {
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [progress, setProgress] = useState(100);
+  const style = toastStyles[type] || toastStyles.info;
+
+  useEffect(() => {
+    if (duration === Infinity) return;
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, 100 - (elapsed / duration) * 100);
+      setProgress(remaining);
+      if (remaining === 0) { clearInterval(interval); handleClose(); }
+    }, 50);
+    return () => clearInterval(interval);
+  }, [duration]);
+
+  const handleClose = () => { setIsLeaving(true); setTimeout(() => onClose(id), 300); };
+
+  return (
+    <div className={`relative overflow-hidden w-full max-w-sm p-4 rounded-xl border shadow-lg transform transition-all duration-300 ease-out ${style.bg} ${isLeaving ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'}`}>
+      <div className="flex items-start gap-3">
+        <div className={`flex-shrink-0 w-8 h-8 rounded-lg ${style.iconBg} flex items-center justify-center`}>
+          <span className="text-sm">{style.icon}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          {title && <p className={`font-semibold text-sm ${style.text}`}>{title}</p>}
+          {message && <p className={`text-sm ${style.text} ${title ? 'mt-0.5 opacity-80' : ''}`}>{message}</p>}
+          {action && (
+            <button onClick={() => { action.onClick(); handleClose(); }} className={`mt-2 text-sm font-medium ${style.text} hover:underline`}>
+              {action.label}
+            </button>
+          )}
+        </div>
+        <button onClick={handleClose} className={`flex-shrink-0 p-1 rounded-lg hover:bg-black/5 ${style.text} opacity-60 hover:opacity-100`}>
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      {duration !== Infinity && (
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/5">
+          <div className={`h-full ${style.progress} transition-all duration-100`} style={{ width: `${progress}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToastContainer({ toasts, removeToast }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+      {toasts.map((toast) => <ToastItem key={toast.id} {...toast} onClose={removeToast} />)}
+    </div>
+  );
+}
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((options) => {
+    const id = Date.now().toString();
+    setToasts((prev) => [...prev, { id, ...options }]);
+    return id;
+  }, []);
+  const removeToast = useCallback((id) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
+
+  const toast = useCallback((message, options = {}) => addToast({ message, ...options }), [addToast]);
+  toast.success = (message, options = {}) => addToast({ type: 'success', message, ...options });
+  toast.error = (message, options = {}) => addToast({ type: 'error', message, ...options });
+  toast.warning = (message, options = {}) => addToast({ type: 'warning', message, ...options });
+  toast.info = (message, options = {}) => addToast({ type: 'info', message, ...options });
+  toast.dismiss = removeToast;
+
+  return (
+    <ToastContext.Provider value={toast}>
+      {children}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+    </ToastContext.Provider>
+  );
+}
+
+function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) throw new Error('useToast must be used within ToastProvider');
+  return context;
+}
+
+// ==========================================
+// MAIN PAGE
+// ==========================================
+
 export default function XDashboardPage() {
+  return (
+    <ToastProvider>
+      <XDashboardContent />
+    </ToastProvider>
+  );
+}
+
+function XDashboardContent() {
   const [connectedAccount, setConnectedAccount] = useState(null);
   const [posts, setPosts] = useState([]);
   const [communities, setCommunities] = useState([]);
@@ -12,6 +123,7 @@ export default function XDashboardPage() {
   const [activeTab, setActiveTab] = useState('compose');
   const [editingPost, setEditingPost] = useState(null);
   const supabase = createClient();
+  const toast = useToast();
 
   useEffect(() => { fetchData(); }, []);
 
@@ -19,24 +131,17 @@ export default function XDashboardPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const { data: account } = await supabase.from('connected_accounts').select('*').eq('platform', 'x').eq('is_active', true).single();
       setConnectedAccount(account || null);
-
       const { data: postsData } = await supabase.from('posts').select('*').eq('platform', 'x').order('created_at', { ascending: false }).limit(50);
       setPosts(postsData || []);
-
-      // Fetch user's saved communities
       const { data: communitiesData } = await supabase.from('x_communities').select('*').eq('user_id', user.id).order('name');
       setCommunities(communitiesData || []);
     } catch (err) { console.error('Fetch error:', err); }
     finally { setLoading(false); }
   };
 
-  const handleEditPost = (post) => {
-    setEditingPost(post);
-    setActiveTab('compose');
-  };
+  const handleEditPost = (post) => { setEditingPost(post); setActiveTab('compose'); };
 
   if (loading) return <div className="min-h-screen bg-[#FAFBFC] flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>;
   if (!connectedAccount) return <ConnectAccountPrompt />;
@@ -94,46 +199,38 @@ function CommunitiesManager({ communities, onUpdate }) {
   const [newCommunityId, setNewCommunityId] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
   const supabase = createClient();
+  const toast = useToast();
 
   const handleAddCommunity = async () => {
     if (!newName.trim() || !newCommunityId.trim()) {
-      setError('Name and Community ID are required');
+      toast.error('Name and Community ID are required');
       return;
     }
-
     setIsSubmitting(true);
-    setError('');
-
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
-
       const { error: insertError } = await supabase.from('x_communities').insert({
         user_id: user.id,
         name: newName.trim(),
         community_id: newCommunityId.trim(),
         description: newDescription.trim() || null,
       });
-
       if (insertError) throw insertError;
-
-      setNewName('');
-      setNewCommunityId('');
-      setNewDescription('');
-      setShowAddForm(false);
+      toast.success(`Added "${newName}" community`);
+      setNewName(''); setNewCommunityId(''); setNewDescription(''); setShowAddForm(false);
       onUpdate();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Remove this community?')) return;
+  const handleDelete = async (id, name) => {
     await supabase.from('x_communities').delete().eq('id', id);
+    toast.success(`Removed "${name}" community`);
     onUpdate();
   };
 
@@ -143,104 +240,57 @@ function CommunitiesManager({ communities, onUpdate }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">👥 My Communities</h2>
-            <p className="text-gray-500 text-sm mt-1">Add X Communities you're a member of to schedule posts to them</p>
+            <p className="text-gray-500 text-sm mt-1">Add X Communities you're a member of</p>
           </div>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="px-4 py-2 bg-black text-white rounded-xl text-sm font-medium hover:bg-gray-800"
-          >
-            + Add Community
-          </button>
+          <button onClick={() => setShowAddForm(true)} className="px-4 py-2 bg-black text-white rounded-xl text-sm font-medium hover:bg-gray-800">+ Add Community</button>
         </div>
 
-        {/* How to find Community ID */}
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl mb-6">
           <h3 className="font-medium text-blue-900 mb-2">💡 How to find your Community ID</h3>
           <ol className="text-sm text-blue-700 space-y-1">
             <li>1. Go to your X Community on x.com</li>
             <li>2. Look at the URL: <code className="bg-blue-100 px-1 rounded">x.com/i/communities/<strong>1234567890</strong></code></li>
-            <li>3. Copy the number at the end - that's your Community ID</li>
+            <li>3. Copy the number at the end</li>
           </ol>
         </div>
 
-        {/* Add Form */}
         {showAddForm && (
           <div className="p-4 bg-gray-50 rounded-xl mb-6 border border-gray-200">
             <h3 className="font-semibold text-gray-900 mb-4">Add New Community</h3>
-            {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Community Name *</label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g., Build in Public"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
+                <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g., Build in Public" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Community ID *</label>
-                <input
-                  type="text"
-                  value={newCommunityId}
-                  onChange={(e) => setNewCommunityId(e.target.value)}
-                  placeholder="e.g., 1493467890123456789"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
-                />
+                <input type="text" value={newCommunityId} onChange={(e) => setNewCommunityId(e.target.value)} placeholder="e.g., 1493467890123456789" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
-                <input
-                  type="text"
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="e.g., Share what you're working on"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
+                <input type="text" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="e.g., Share what you're working on" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => { setShowAddForm(false); setError(''); }}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-xl text-sm font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddCommunity}
-                  disabled={isSubmitting || !newName.trim() || !newCommunityId.trim()}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
-                >
-                  {isSubmitting ? '⏳ Adding...' : 'Add Community'}
-                </button>
+                <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-xl text-sm font-medium">Cancel</button>
+                <button onClick={handleAddCommunity} disabled={isSubmitting || !newName.trim() || !newCommunityId.trim()} className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium hover:bg-blue-600 disabled:opacity-50">{isSubmitting ? '⏳ Adding...' : 'Add Community'}</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Communities List */}
         {communities.length > 0 ? (
           <div className="space-y-3">
             {communities.map((community) => (
               <div key={community.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                    {community.name[0].toUpperCase()}
-                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">{community.name[0].toUpperCase()}</div>
                   <div>
                     <div className="font-medium text-gray-900">{community.name}</div>
-                    {community.description && (
-                      <div className="text-sm text-gray-500">{community.description}</div>
-                    )}
+                    {community.description && <div className="text-sm text-gray-500">{community.description}</div>}
                     <div className="text-xs text-gray-400 font-mono mt-0.5">ID: {community.community_id}</div>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete(community.id)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                >
-                  🗑️
-                </button>
+                <button onClick={() => handleDelete(community.id, community.name)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">🗑️</button>
               </div>
             ))}
           </div>
@@ -248,25 +298,18 @@ function CommunitiesManager({ communities, onUpdate }) {
           <div className="text-center py-8 text-gray-500">
             <div className="text-4xl mb-2">👥</div>
             <p>No communities added yet</p>
-            <p className="text-sm mt-1">Add communities you're a member of to schedule posts to them</p>
           </div>
         )}
       </div>
 
-      {/* Note about X API */}
       <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
         <h3 className="font-medium text-amber-900 mb-1">⚠️ How Community Scheduling Works</h3>
-        <p className="text-sm text-amber-700 mb-2">
-          X's API doesn't support posting directly to Communities. Here's what happens:
-        </p>
+        <p className="text-sm text-amber-700 mb-2">X's API doesn't support posting directly to Communities. Here's what happens:</p>
         <ol className="text-sm text-amber-700 list-decimal list-inside space-y-1">
           <li>Your post publishes to your <strong>main timeline</strong></li>
           <li>You get a reminder notification with the community link</li>
           <li>You manually share/repost to the community from X</li>
         </ol>
-        <p className="text-sm text-amber-600 mt-2 italic">
-          This is a limitation of X's API, not Distributo.
-        </p>
       </div>
     </div>
   );
@@ -280,8 +323,6 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiTone, setAiTone] = useState('casual');
@@ -291,9 +332,10 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
   const [scheduleTime, setScheduleTime] = useState('');
   const [customTime, setCustomTime] = useState('');
   const [selectedCommunity, setSelectedCommunity] = useState('');
-  const [postToTimeline, setPostToTimeline] = useState(true);
   const supabase = createClient();
-  const maxLength = 280;
+  const toast = useToast();
+  const maxLength = 25000; // X allows long posts but only 280 chars show in timeline
+  const visibleLength = 280; // Characters visible without "Show more"
 
   useEffect(() => {
     if (editingPost) {
@@ -306,11 +348,7 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
         setShowScheduler(true);
       }
     } else {
-      setContent('');
-      setSelectedCommunity('');
-      setScheduleDate('');
-      setScheduleTime('');
-      setShowScheduler(false);
+      setContent(''); setSelectedCommunity(''); setScheduleDate(''); setScheduleTime(''); setShowScheduler(false);
     }
   }, [editingPost]);
 
@@ -337,8 +375,7 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
     const days = [];
     const today = new Date();
     for (let i = 0; i < 14; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
+      const date = new Date(today); date.setDate(today.getDate() + i);
       days.push({
         value: date.toISOString().split('T')[0],
         dayName: date.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -370,16 +407,13 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
       motivational: `Today I shipped ${aiPrompt} 💪\n\nRemember: Every big achievement started as a small step.\n\nKeep building. Keep shipping.\n\n#buildinpublic`,
     };
     setContent(mockResponses[aiTone] || mockResponses.casual);
-    setShowAIModal(false);
-    setAiPrompt('');
-    setAiGenerating(false);
+    setShowAIModal(false); setAiPrompt(''); setAiGenerating(false);
+    toast.success('Tweet generated!');
   };
 
   const handlePostNow = async () => {
     if (!content.trim()) return;
     setIsPosting(true);
-    setError('');
-    setSuccess('');
     try {
       const response = await fetch('/api/posts/x/publish', {
         method: 'POST',
@@ -389,22 +423,24 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to post');
       
-      // Check if there was a community selected
       const communityData = communities.find(c => c.community_id === selectedCommunity);
-      
-      setContent('');
-      setSelectedCommunity('');
+      setContent(''); setSelectedCommunity('');
       
       if (communityData) {
-        // Show success with community reminder
-        setSuccess(`🎉 Posted to X! Now share to "${communityData.name}" → x.com/i/communities/${communityData.community_id}`);
+        toast.success('Posted to X!', {
+          title: '🎉 Success',
+          duration: 10000,
+          action: {
+            label: `Share to ${communityData.name} →`,
+            onClick: () => window.open(`https://x.com/i/communities/${communityData.community_id}`, '_blank')
+          }
+        });
       } else {
-        setSuccess('🎉 Posted to X!');
+        toast.success('Posted to X!');
       }
-      setTimeout(() => setSuccess(''), 10000); // Longer timeout for community reminder
       onPostCreated();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     } finally {
       setIsPosting(false);
     }
@@ -413,7 +449,6 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
   const handleSchedule = async () => {
     if (!content.trim() || !scheduleDate || !scheduleTime) return;
     setIsSubmitting(true);
-    setError('');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
@@ -421,35 +456,22 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
 
       if (editingPost) {
         const { error: updateError } = await supabase.from('posts').update({
-          content: content.trim(),
-          scheduled_at: scheduledAt,
-          community_id: selectedCommunity || null,
-          updated_at: new Date().toISOString(),
+          content: content.trim(), scheduled_at: scheduledAt, community_id: selectedCommunity || null, updated_at: new Date().toISOString(),
         }).eq('id', editingPost.id);
         if (updateError) throw updateError;
-        setSuccess('✅ Post updated!');
+        toast.success('Post updated!');
       } else {
         const { error: insertError } = await supabase.from('posts').insert({
-          user_id: user.id,
-          content: content.trim(),
-          platform: 'x',
-          status: 'scheduled',
-          scheduled_at: scheduledAt,
-          community_id: selectedCommunity || null,
+          user_id: user.id, content: content.trim(), platform: 'x', status: 'scheduled', scheduled_at: scheduledAt, community_id: selectedCommunity || null,
         });
         if (insertError) throw insertError;
-        setSuccess('📅 Post scheduled!');
+        toast.success(`Scheduled for ${new Date(scheduledAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`);
       }
 
-      setContent('');
-      setScheduleDate('');
-      setScheduleTime('');
-      setSelectedCommunity('');
-      setShowScheduler(false);
-      setTimeout(() => setSuccess(''), 3000);
+      setContent(''); setScheduleDate(''); setScheduleTime(''); setSelectedCommunity(''); setShowScheduler(false);
       onPostCreated();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -458,37 +480,22 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
   const handleSaveDraft = async () => {
     if (!content.trim()) return;
     setIsSubmitting(true);
-    setError('');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
 
       if (editingPost) {
-        await supabase.from('posts').update({
-          content: content.trim(),
-          status: 'draft',
-          community_id: selectedCommunity || null,
-          scheduled_at: null,
-          updated_at: new Date().toISOString(),
-        }).eq('id', editingPost.id);
-        setSuccess('✅ Draft updated!');
+        await supabase.from('posts').update({ content: content.trim(), status: 'draft', community_id: selectedCommunity || null, scheduled_at: null, updated_at: new Date().toISOString() }).eq('id', editingPost.id);
+        toast.success('Draft updated!');
       } else {
-        await supabase.from('posts').insert({
-          user_id: user.id,
-          content: content.trim(),
-          platform: 'x',
-          status: 'draft',
-          community_id: selectedCommunity || null,
-        });
-        setSuccess('📝 Draft saved!');
+        await supabase.from('posts').insert({ user_id: user.id, content: content.trim(), platform: 'x', status: 'draft', community_id: selectedCommunity || null });
+        toast.success('Draft saved!');
       }
 
-      setContent('');
-      setSelectedCommunity('');
-      setTimeout(() => setSuccess(''), 3000);
+      setContent(''); setSelectedCommunity('');
       onPostCreated();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -511,9 +518,6 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
         </div>
       )}
 
-      {error && <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3"><span className="text-red-500">⚠️</span><span className="text-red-700 flex-1">{error}</span><button onClick={() => setError('')} className="text-red-400 hover:text-red-600">✕</button></div>}
-      {success && <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700">{success}</div>}
-
       {showAIModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
@@ -522,7 +526,7 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
               <div><label className="block text-sm font-medium text-gray-700 mb-2">What do you want to post about?</label><textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="e.g., Just launched my new feature, hit 100 users..." className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-h-[100px]" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-2">Tone</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {[{ id: 'casual', label: '😊 Casual', desc: 'Friendly & conversational' }, { id: 'professional', label: '💼 Professional', desc: 'Business-appropriate' }, { id: 'funny', label: '😄 Funny', desc: 'Witty & entertaining' }, { id: 'motivational', label: '💪 Motivational', desc: 'Inspiring' }].map((tone) => (
+                  {[{ id: 'casual', label: '😊 Casual', desc: 'Friendly' }, { id: 'professional', label: '💼 Professional', desc: 'Business' }, { id: 'funny', label: '😄 Funny', desc: 'Witty' }, { id: 'motivational', label: '💪 Motivational', desc: 'Inspiring' }].map((tone) => (
                     <button key={tone.id} onClick={() => setAiTone(tone.id)} className={`p-3 rounded-xl text-left transition-all ${aiTone === tone.id ? 'bg-blue-50 border-2 border-blue-500' : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'}`}><div className="font-medium text-gray-900">{tone.label}</div><div className="text-xs text-gray-500">{tone.desc}</div></button>
                   ))}
                 </div>
@@ -543,78 +547,87 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
         </div>
 
         <div className="p-4">
-          <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="What's happening?" className="w-full min-h-[120px] text-lg resize-none focus:outline-none placeholder-gray-400" maxLength={maxLength} />
+          <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="What's happening?" className="w-full min-h-[120px] text-lg resize-none focus:outline-none placeholder-gray-400" />
+          
+          {/* Long post warning */}
+          {content.length > visibleLength && (
+            <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+              <span className="text-amber-500">⚠️</span>
+              <div className="text-sm text-amber-700">
+                <strong>Long post:</strong> Only the first {visibleLength} characters will show in the timeline. 
+                Users will need to tap "Show more" to read the rest ({content.length - visibleLength} hidden characters).
+              </div>
+            </div>
+          )}
+          
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <div className="flex items-center gap-3"><button className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg">🖼️</button><button className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg">😀</button></div>
-            <div className="flex items-center gap-2">
-              <div className="relative w-8 h-8"><svg className="w-8 h-8 -rotate-90"><circle cx="16" cy="16" r="12" fill="none" stroke="#e5e7eb" strokeWidth="3" /><circle cx="16" cy="16" r="12" fill="none" stroke={content.length > 260 ? '#ef4444' : content.length > 200 ? '#f59e0b' : '#3b82f6'} strokeWidth="3" strokeDasharray={`${(content.length / maxLength) * 75.4} 75.4`} /></svg>{content.length > 200 && <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${content.length > 260 ? 'text-red-500' : 'text-amber-500'}`}>{maxLength - content.length}</span>}</div>
-              <span className="text-sm text-gray-400">{content.length}/{maxLength}</span>
+            <div className="flex items-center gap-3">
+              {/* Visible character indicator */}
+              <div className="flex items-center gap-2">
+                <div className="relative w-8 h-8">
+                  <svg className="w-8 h-8 -rotate-90">
+                    <circle cx="16" cy="16" r="12" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                    <circle 
+                      cx="16" cy="16" r="12" fill="none" 
+                      stroke={content.length > visibleLength ? '#f59e0b' : '#3b82f6'} 
+                      strokeWidth="3" 
+                      strokeDasharray={`${Math.min((content.length / visibleLength) * 75.4, 75.4)} 75.4`} 
+                    />
+                  </svg>
+                  {content.length > visibleLength - 20 && content.length <= visibleLength && (
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-500">
+                      {visibleLength - content.length}
+                    </span>
+                  )}
+                  {content.length > visibleLength && (
+                    <span className="absolute inset-0 flex items-center justify-center text-xs">📜</span>
+                  )}
+                </div>
+                <div className="text-sm">
+                  {content.length <= visibleLength ? (
+                    <span className="text-gray-400">{content.length}/{visibleLength}</span>
+                  ) : (
+                    <span className="text-amber-600">{content.length} <span className="text-gray-400 text-xs">(long post)</span></span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Community Selection */}
         <div className="px-4 pb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            👥 Post to Timeline + Remind to Share
-          </label>
-          <p className="text-xs text-gray-500 mb-3">
-            Select a community to get a reminder to share there after posting (X API limitation)
-          </p>
+          <label className="block text-sm font-medium text-gray-700 mb-2">👥 Post to Timeline + Remind to Share</label>
+          <p className="text-xs text-gray-500 mb-3">Select a community to get a reminder to share there after posting</p>
           <div className="space-y-2">
-            {/* Timeline Option */}
-            <button
-              onClick={() => setSelectedCommunity('')}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${!selectedCommunity ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
-            >
+            <button onClick={() => setSelectedCommunity('')} className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${!selectedCommunity ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
               <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">👤</div>
-              <div className="flex-1">
-                <div className="font-medium text-gray-900">Everyone</div>
-                <div className="text-xs text-gray-500">Post to your timeline</div>
-              </div>
+              <div className="flex-1"><div className="font-medium text-gray-900">Everyone</div><div className="text-xs text-gray-500">Post to your timeline</div></div>
               {!selectedCommunity && <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
             </button>
 
-            {/* My Communities Section */}
             {communities.length > 0 && (
               <div className="mt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-500">My Communities</span>
-                  <Link href="#" onClick={(e) => { e.preventDefault(); }} className="text-xs text-blue-600 hover:text-blue-700">+ Add/Manage</Link>
-                </div>
+                <div className="flex items-center justify-between mb-2"><span className="text-sm font-medium text-gray-500">My Communities</span></div>
                 {communities.map((community) => (
-                  <button
-                    key={community.id}
-                    onClick={() => setSelectedCommunity(community.community_id)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left mb-2 ${selectedCommunity === community.community_id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                      {community.name[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">{community.name}</div>
-                      {community.description && <div className="text-xs text-gray-500">{community.description}</div>}
-                      <div className="text-xs text-gray-400 font-mono">ID: {community.community_id.slice(0, 10)}...</div>
-                    </div>
+                  <button key={community.id} onClick={() => setSelectedCommunity(community.community_id)} className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left mb-2 ${selectedCommunity === community.community_id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">{community.name[0].toUpperCase()}</div>
+                    <div className="flex-1"><div className="font-medium text-gray-900">{community.name}</div>{community.description && <div className="text-xs text-gray-500">{community.description}</div>}</div>
                     {selectedCommunity === community.community_id && <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                   </button>
                 ))}
               </div>
             )}
 
-            {/* No communities yet */}
             {communities.length === 0 && (
               <div className="p-4 bg-gray-50 rounded-xl text-center">
                 <p className="text-sm text-gray-500 mb-2">No communities added yet</p>
-                <button onClick={() => {}} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-                  Go to Communities tab to add →
-                </button>
+                <p className="text-xs text-gray-400">Go to Communities tab to add</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Scheduler */}
         {showScheduler && (
           <div className="border-t border-gray-100 bg-gray-50 p-4">
             <div className="flex items-center justify-between mb-4">
@@ -666,7 +679,7 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl mb-4">
                 <div className="text-sm text-blue-800">
                   📅 Will be posted on <strong>{new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</strong>
-                  {selectedCommunityData && <span className="block mt-1">👥 To: {selectedCommunityData.name}</span>}
+                  {selectedCommunityData && <span className="block mt-1">👥 Reminder to share to: {selectedCommunityData.name}</span>}
                 </div>
               </div>
             )}
@@ -689,8 +702,8 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
       <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl">
         <h4 className="font-semibold text-blue-900 mb-2">💡 Tips for better engagement</h4>
         <ul className="text-sm text-blue-700 space-y-1">
-          <li>• <strong>Best times:</strong> 9 AM, 12 PM, 5 PM, 8 PM (your timezone)</li>
-          <li>• <strong>Threads</strong> get 2-3x more engagement than single tweets</li>
+          <li>• <strong>Best times:</strong> 9 AM, 12 PM, 5 PM, 8 PM</li>
+          <li>• <strong>Threads</strong> get 2-3x more engagement</li>
           <li>• <strong>Questions</strong> boost replies by 50%</li>
           <li>• <strong>Weekends</strong> have 20% less engagement</li>
         </ul>
@@ -699,12 +712,17 @@ function TweetComposer({ account, communities, onPostCreated, editingPost, onCan
   );
 }
 
+// ==========================================
+// POST FINDER
+// ==========================================
+
 function PostFinder({ account }) {
   const [community, setCommunity] = useState('Build in Public');
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyContent, setReplyContent] = useState('');
+  const toast = useToast();
   const communities = ['Build in Public', 'SaaS Founders', 'Developer Tools', 'AI/ML', 'No-Code', 'Indie Hackers'];
 
   const fetchPosts = async () => {
@@ -717,11 +735,19 @@ function PostFinder({ account }) {
     ];
     setPosts(mockPosts);
     setLoading(false);
+    toast.success(`Found ${mockPosts.length} posts in ${community}`);
   };
 
   const generateReply = () => {
     const replies = [`Great insights! I'm building something similar - would love to connect 🙌`, `This resonates. What was your biggest challenge?`, `Love this! Currently at the same stage 💪`];
     setReplyContent(replies[Math.floor(Math.random() * replies.length)]);
+    toast.info('Reply generated!');
+  };
+
+  const handleSendReply = () => {
+    toast.success('Reply sent!');
+    setReplyingTo(null);
+    setReplyContent('');
   };
 
   return (
@@ -745,10 +771,13 @@ function PostFinder({ account }) {
               <div className="flex items-center gap-6 text-sm text-gray-500 mb-4"><span>❤️ {post.metrics.likes.toLocaleString()}</span><span>💬 {post.metrics.replies.toLocaleString()}</span></div>
               {replyingTo === post.id ? (
                 <div className="border-t border-gray-100 pt-4">
-                  <textarea value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Write your reply..." className="w-full p-3 border border-gray-200 rounded-xl min-h-[80px]" maxLength={280} />
+                  <textarea value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Write your reply..." className="w-full p-3 border border-gray-200 rounded-xl min-h-[80px]" />
+                  {replyContent.length > 280 && (
+                    <p className="text-xs text-amber-600 mt-1">⚠️ Long reply: only first 280 chars visible in timeline</p>
+                  )}
                   <div className="flex items-center justify-between mt-3">
                     <button onClick={generateReply} className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">✨ AI Suggest</button>
-                    <div className="flex gap-2"><button onClick={() => { setReplyingTo(null); setReplyContent(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cancel</button><button disabled={!replyContent.trim()} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium disabled:opacity-50">Reply</button></div>
+                    <div className="flex gap-2"><button onClick={() => { setReplyingTo(null); setReplyContent(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Cancel</button><button onClick={handleSendReply} disabled={!replyContent.trim()} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium disabled:opacity-50">Reply</button></div>
                   </div>
                 </div>
               ) : (
@@ -766,16 +795,39 @@ function PostFinder({ account }) {
   );
 }
 
+// ==========================================
+// POSTS LIST
+// ==========================================
+
 function PostsList({ posts, communities, emptyMessage, onUpdate, onEdit, showEdit }) {
   const supabase = createClient();
-  const handleDelete = async (postId) => { if (!confirm('Delete?')) return; await supabase.from('posts').delete().eq('id', postId); onUpdate(); };
+  const toast = useToast();
+
+  const handleDelete = async (postId) => {
+    await supabase.from('posts').delete().eq('id', postId);
+    toast.success('Post deleted');
+    onUpdate();
+  };
+
   const handlePostNow = async (post) => {
-    if (!confirm('Post now?')) return;
     try {
       const response = await fetch('/api/posts/x/publish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: post.content, postId: post.id }) });
       if (!response.ok) { const data = await response.json(); throw new Error(data.error); }
+      
+      const communityData = communities.find(c => c.community_id === post.community_id);
+      if (communityData) {
+        toast.success('Posted to X!', {
+          title: '🎉 Success',
+          duration: 10000,
+          action: { label: `Share to ${communityData.name} →`, onClick: () => window.open(`https://x.com/i/communities/${communityData.community_id}`, '_blank') }
+        });
+      } else {
+        toast.success('Posted to X!');
+      }
       onUpdate();
-    } catch (err) { alert('Failed: ' + err.message); }
+    } catch (err) {
+      toast.error(err.message);
+    }
   };
 
   const getCommunityName = (communityId) => {
@@ -810,6 +862,10 @@ function PostsList({ posts, communities, emptyMessage, onUpdate, onEdit, showEdi
     </div>
   );
 }
+
+// ==========================================
+// CONNECT ACCOUNT PROMPT
+// ==========================================
 
 function ConnectAccountPrompt() {
   return (
