@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -13,23 +13,22 @@ export async function GET(request) {
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
+  // Use NEXT_PUBLIC_APP_URL for consistent redirects
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://distributo.dev';
+
   // Check for errors
   if (error) {
     console.error('GitHub OAuth error:', error);
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/github?error=${encodeURIComponent(error)}`
-    );
+    return NextResponse.redirect(`${baseUrl}/dashboard/github?error=${encodeURIComponent(error)}`);
   }
 
   // Verify state
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const storedState = cookieStore.get('github_oauth_state')?.value;
 
   if (!state || state !== storedState) {
     console.error('State mismatch');
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/github?error=state_mismatch`
-    );
+    return NextResponse.redirect(`${baseUrl}/dashboard/github?error=state_mismatch`);
   }
 
   try {
@@ -65,40 +64,52 @@ export async function GET(request) {
 
     const userData = await userResponse.json();
 
-    // Get current Supabase user from session
-    const supabaseAuthCookie = cookieStore.get('sb-access-token')?.value || 
-                               cookieStore.get('supabase-auth-token')?.value;
-    
-    // We need to get the user ID from the session
-    // For now, we'll get it from the request headers or a separate cookie
-    const authHeader = request.headers.get('authorization');
-    
-    // Get user from Supabase session
-    const { data: { user }, error: userError } = await supabase.auth.getUser(
-      cookieStore.get('sb-access-token')?.value
-    );
+    // Get Supabase session from cookies
+    const supabaseAccessToken = cookieStore.get('sb-access-token')?.value;
+    let userId = null;
 
-    if (!user) {
-      // Try to get user from session cookie
+    if (supabaseAccessToken) {
+      const { data: { user } } = await supabase.auth.getUser(supabaseAccessToken);
+      userId = user?.id;
+    }
+
+    // Try alternative cookie names if not found
+    if (!userId) {
       const sessionCookie = cookieStore.get('sb-session')?.value;
       if (sessionCookie) {
-        const session = JSON.parse(sessionCookie);
-        if (session?.user?.id) {
-          // Use session user
+        try {
+          const session = JSON.parse(sessionCookie);
+          userId = session?.user?.id;
+        } catch (e) {}
+      }
+    }
+
+    // Check all Supabase auth cookies
+    if (!userId) {
+      const allCookies = cookieStore.getAll();
+      for (const cookie of allCookies) {
+        if (cookie.name.includes('supabase') && cookie.name.includes('auth')) {
+          try {
+            const parsed = JSON.parse(cookie.value);
+            if (parsed?.user?.id) {
+              userId = parsed.user.id;
+              break;
+            }
+          } catch (e) {}
         }
       }
-      
-      // Redirect to login if no user
-      return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/login?error=not_authenticated`
-      );
+    }
+
+    if (!userId) {
+      console.error('No authenticated user found');
+      return NextResponse.redirect(`${baseUrl}/login?error=not_authenticated&redirect=/dashboard/github`);
     }
 
     // Check if GitHub account already connected
     const { data: existingAccount } = await supabase
       .from('connected_accounts')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('platform', 'github')
       .single();
 
@@ -113,7 +124,7 @@ export async function GET(request) {
           platform_display_name: userData.name,
           platform_avatar_url: userData.avatar_url,
           is_active: true,
-          updated_at: new Date().toISOString(),
+          last_used_at: new Date().toISOString(),
         })
         .eq('id', existingAccount.id);
     } else {
@@ -121,7 +132,7 @@ export async function GET(request) {
       await supabase
         .from('connected_accounts')
         .insert({
-          user_id: user.id,
+          user_id: userId,
           platform: 'github',
           access_token: accessToken,
           platform_user_id: userData.id.toString(),
@@ -132,19 +143,14 @@ export async function GET(request) {
         });
     }
 
-    // Clear state cookie
-    const response = NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/github?success=connected`
-    );
-    
+    // Clear state cookie and redirect
+    const response = NextResponse.redirect(`${baseUrl}/dashboard/github?success=connected`);
     response.cookies.delete('github_oauth_state');
 
     return response;
 
   } catch (err) {
     console.error('GitHub OAuth callback error:', err);
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/github?error=${encodeURIComponent(err.message)}`
-    );
+    return NextResponse.redirect(`${baseUrl}/dashboard/github?error=${encodeURIComponent(err.message)}`);
   }
 }
