@@ -236,42 +236,12 @@ export default function IntegrationsPage() {
         <div className="mt-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Developer Integrations</h2>
           
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0">
-                <GitHubIcon className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-gray-900">GitHub Autopilot</h3>
-                  <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                    Coming Soon
-                  </span>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  Automatically generate social media posts from your GitHub commits. 
-                  Connect your repository and let AI turn your code updates into engaging content.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
-                    Webhook integration
-                  </span>
-                  <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
-                    Smart commit filtering
-                  </span>
-                  <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
-                    Multi-platform generation
-                  </span>
-                </div>
-              </div>
-              <button
-                disabled
-                className="px-6 py-2.5 text-sm font-medium bg-gray-100 text-gray-400 rounded-lg cursor-not-allowed"
-              >
-                Coming Soon
-              </button>
-            </div>
-          </div>
+          <GitHubIntegrationCard 
+            connectedAccount={getConnectedAccount('github')}
+            onConnect={() => handleConnect('github')}
+            onDisconnect={() => handleDisconnect('github')}
+            connecting={connecting === 'github'}
+          />
         </div>
 
         {/* API Usage Section */}
@@ -335,6 +305,109 @@ function UsageCard({ platform, icon: Icon, used, limit, color, disabled }) {
       </div>
       <div className="mt-1 text-xs text-gray-500">
         {disabled ? 'Not connected' : `${limit - used} remaining`}
+      </div>
+    </div>
+  );
+}
+
+function GitHubIntegrationCard({ connectedAccount, onConnect, onDisconnect, connecting }) {
+  return (
+    <div className={`bg-white rounded-xl border ${connectedAccount ? 'border-green-200' : 'border-gray-200'} p-6 transition-all hover:shadow-md`}>
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0">
+            <GitHubIcon className="w-6 h-6 text-white" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-gray-900">GitHub Autopilot</h3>
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                NEW
+              </span>
+              {connectedAccount && (
+                <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full flex items-center gap-1">
+                  <CheckIcon className="w-3 h-3" />
+                  Connected
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mt-1">
+              Automatically generate social media posts from your GitHub commits. 
+              Connect your repository and let AI turn your code updates into engaging content.
+            </p>
+
+            {/* Connected Account Info */}
+            {connectedAccount && (
+              <div className="mt-3 flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                {connectedAccount.platform_avatar_url ? (
+                  <img
+                    src={connectedAccount.platform_avatar_url}
+                    alt={connectedAccount.platform_username}
+                    className="w-8 h-8 rounded-full"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                    <span className="text-sm font-medium text-gray-600">
+                      {connectedAccount.platform_username?.[0]?.toUpperCase()}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <div className="font-medium text-sm text-gray-900">
+                    @{connectedAccount.platform_username}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Connected {new Date(connectedAccount.connected_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <a 
+                  href="/dashboard/github"
+                  className="ml-auto text-sm text-purple-600 hover:text-purple-700 font-medium"
+                >
+                  Manage Repos →
+                </a>
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
+                Webhook integration
+              </span>
+              <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
+                Smart commit filtering
+              </span>
+              <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-md">
+                Multi-platform generation
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-end gap-2">
+          {connectedAccount ? (
+            <button
+              onClick={onDisconnect}
+              className="text-red-600 hover:text-red-700 text-sm font-medium"
+            >
+              Disconnect
+            </button>
+          ) : (
+            <button
+              onClick={onConnect}
+              disabled={connecting}
+              className="px-6 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {connecting ? (
+                <>
+                  <LoadingIcon className="w-4 h-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Connect'
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

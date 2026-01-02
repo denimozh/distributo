@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
+import { headers } from 'next/headers';
 
 // X OAuth 2.0 PKCE flow - Step 1: Redirect to X authorization
 export async function GET(request) {
@@ -22,8 +23,16 @@ export async function GET(request) {
   // Generate state for CSRF protection
   const state = crypto.randomBytes(16).toString('hex');
 
-  // Store code verifier and state in cookie (httpOnly for security)
-  const response = NextResponse.redirect(buildAuthUrl(state, codeChallenge));
+  // Get base URL dynamically
+  const headersList = await headers();
+  const host = headersList.get('host');
+  const protocol = host?.includes('localhost') ? 'http' : 'https';
+  const baseUrl = `${protocol}://${host}`;
+
+  // Build auth URL with correct callback path
+  const redirectUri = `${baseUrl}/api/auth/callback/x`;
+  
+  const response = NextResponse.redirect(buildAuthUrl(state, codeChallenge, redirectUri));
   
   // Set cookies for verification in callback
   response.cookies.set('x_code_verifier', codeVerifier, {
@@ -45,15 +54,10 @@ export async function GET(request) {
   return response;
 }
 
-function buildAuthUrl(state, codeChallenge) {
+function buildAuthUrl(state, codeChallenge, redirectUri) {
   const clientId = process.env.X_CLIENT_ID;
-  const redirectUri = process.env.X_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/x/callback`;
   
   // X OAuth 2.0 scopes
-  // tweet.read - Read tweets
-  // tweet.write - Post tweets
-  // users.read - Read user info
-  // offline.access - Get refresh token
   const scopes = ['tweet.read', 'tweet.write', 'users.read', 'offline.access'];
 
   const params = new URLSearchParams({

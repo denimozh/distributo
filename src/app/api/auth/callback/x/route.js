@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { headers } from 'next/headers';
 
 // X OAuth 2.0 PKCE flow - Step 2: Handle callback and exchange code for tokens
 export async function GET(request) {
@@ -7,6 +8,12 @@ export async function GET(request) {
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
+
+  // Get base URL dynamically (must match what was used in connect route)
+  const headersList = await headers();
+  const host = headersList.get('host');
+  const protocol = host?.includes('localhost') ? 'http' : 'https';
+  const baseUrl = `${protocol}://${host}`;
 
   // Handle OAuth errors
   if (error) {
@@ -36,8 +43,11 @@ export async function GET(request) {
   }
 
   try {
+    // The redirect URI MUST match exactly what was sent in the authorization request
+    const redirectUri = `${baseUrl}/api/auth/callback/x`;
+    
     // Exchange code for tokens
-    const tokens = await exchangeCodeForTokens(code, codeVerifier);
+    const tokens = await exchangeCodeForTokens(code, codeVerifier, redirectUri);
     
     // Get user info from X
     const xUser = await getXUserInfo(tokens.access_token);
@@ -95,10 +105,9 @@ export async function GET(request) {
   }
 }
 
-async function exchangeCodeForTokens(code, codeVerifier) {
+async function exchangeCodeForTokens(code, codeVerifier, redirectUri) {
   const clientId = process.env.X_CLIENT_ID;
   const clientSecret = process.env.X_CLIENT_SECRET;
-  const redirectUri = process.env.X_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/x/callback`;
 
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -121,6 +130,7 @@ async function exchangeCodeForTokens(code, codeVerifier) {
 
   if (!response.ok) {
     const errorData = await response.json();
+    console.error('Token exchange error:', errorData);
     throw new Error(errorData.error_description || 'Failed to exchange code for tokens');
   }
 
