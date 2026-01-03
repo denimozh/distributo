@@ -261,9 +261,26 @@ function GitHubAutopilotContent() {
         {activeTab === 'settings' && (
           <SettingsTab 
             settings={settings}
-            onUpdate={(newSettings) => {
+            onUpdate={async (newSettings) => {
               setSettings(newSettings);
               // Save to database
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                
+                // Upsert settings
+                const { error } = await supabase
+                  .from('github_autopilot_settings')
+                  .upsert({
+                    user_id: user.id,
+                    settings: newSettings,
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'user_id' });
+                
+                if (error) throw error;
+              } catch (err) {
+                console.error('Failed to save settings:', err);
+              }
             }}
           />
         )}
@@ -439,13 +456,23 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
       if (error) throw error;
 
       // Set up webhook
-      await fetch('/api/github/webhook/setup', {
+      const webhookResponse = await fetch('/api/github/webhook/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ repoFullName: repo.full_name }),
       });
 
-      toast.success(`Added ${repo.name}!`);
+      const webhookData = await webhookResponse.json();
+      
+      if (!webhookResponse.ok) {
+        console.error('Webhook setup failed:', webhookData);
+        // Still show success for repo add, but warn about webhook
+        toast.success(`Added ${repo.name}!`);
+        toast.error(`Webhook setup failed: ${webhookData.error}. Click "Setup webhook" to retry.`);
+      } else {
+        toast.success(`Added ${repo.name} with auto-sync enabled! 🎉`);
+      }
+      
       setShowAddRepo(false);
       onUpdate();
     } catch (err) {
@@ -499,6 +526,30 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
       toast.success(`Synced ${data.fetched} commits from ${repo.repo_name}!`);
       onUpdate();
     } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleSetupWebhook = async (repo) => {
+    try {
+      toast.info(`Setting up webhook for ${repo.repo_name}...`);
+      
+      const response = await fetch('/api/github/webhook/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoFullName: repo.repo_full_name }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to setup webhook');
+      }
+      
+      toast.success(`Webhook created for ${repo.repo_name}! Auto-sync is now active.`);
+      onUpdate();
+    } catch (err) {
+      console.error('Webhook setup error:', err);
       toast.error(err.message);
     }
   };
@@ -689,6 +740,21 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
                   <span>↗️</span>
                   <span>View on GitHub</span>
                 </a>
+                {/* Webhook Status */}
+                {repo.webhook_id ? (
+                  <div className="flex items-center gap-1 text-green-600">
+                    <span>🔗</span>
+                    <span>Webhook active</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleSetupWebhook(repo)}
+                    className="flex items-center gap-1 text-amber-600 hover:text-amber-700"
+                  >
+                    <span>⚠️</span>
+                    <span>Setup webhook</span>
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -1082,8 +1148,8 @@ function SettingsTab({ settings, onUpdate }) {
   const toneOptions = [
     { id: 'casual', label: '😊 Casual', desc: 'Friendly, conversational' },
     { id: 'professional', label: '💼 Professional', desc: 'Business-appropriate' },
-    { id: 'funny', label: '😄 Funny', desc: 'Witty, entertaining' },
-    { id: 'motivational', label: '💪 Motivational', desc: 'Inspiring, uplifting' },
+    { id: 'funny', label: '😄 Funny', desc: 'Witty, self-deprecating' },
+    { id: 'hype', label: '🔥 Hype', desc: 'Energetic, excited' },
   ];
 
   const commitFilters = [
