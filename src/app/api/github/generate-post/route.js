@@ -22,8 +22,9 @@ export async function POST(request) {
       repoName,
       repoFullName,
       platform = 'x', 
-      tone = 'casual',
-      useAI = true 
+      generateVariations = true,
+      selectedStyle = null,
+      saveToDb = true,
     } = await request.json();
 
     if (!commitMessage) {
@@ -38,72 +39,100 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    let content;
-    let diffAnalysis = null;
+    // Check if we have Anthropic API key
+    if (!anthropic) {
+      console.error('[GENERATE] No ANTHROPIC_API_KEY found in environment variables');
+      return NextResponse.json({ 
+        error: 'AI generation not configured. Please add ANTHROPIC_API_KEY to environment variables.',
+        fallback: true,
+        variations: generateFallbackVariations(commitMessage, repoName || 'my project', platform)
+      }, { status: 200 });
+    }
 
-    // Try AI generation with diff analysis if enabled and API key exists
-    if (useAI && anthropic && repoFullName && commitSha) {
+    let diffSummary = null;
+
+    // Fetch diff if we have repo info
+    if (repoFullName && commitSha) {
       try {
-        console.log('[GENERATE] Fetching diff for AI analysis...');
-        const analysisResult = await generateWithDiffAnalysis(
-          user.id,
-          repoFullName,
-          commitSha,
-          commitMessage,
-          repoName || repoFullName.split('/')[1],
-          platform,
-          tone
-        );
-        content = analysisResult.content;
-        diffAnalysis = analysisResult.diffSummary;
-        console.log('[GENERATE] AI generation successful');
-      } catch (aiError) {
-        console.error('[GENERATE] AI generation failed, falling back to templates:', aiError.message);
-        content = generatePostContent(commitMessage, repoName || 'my project', tone, platform);
+        console.log('[GENERATE] Fetching diff for:', repoFullName, commitSha);
+        diffSummary = await fetchDiffSummary(user.id, repoFullName, commitSha);
+        console.log('[GENERATE] Diff fetched:', diffSummary?.totalFiles, 'files');
+      } catch (diffError) {
+        console.error('[GENERATE] Failed to fetch diff:', diffError.message);
+        // Continue without diff
       }
-    } else {
-      // Fall back to template generation
-      content = generatePostContent(commitMessage, repoName || 'my project', tone, platform);
     }
 
-    // Create post in database
-    const { data: post, error: postError } = await supabaseAdmin
-      .from('posts')
-      .insert({
-        user_id: user.id,
-        content: content,
-        platform: platform,
-        status: 'draft',
-        source: 'github',
-        source_commit: commitSha || commitId,
-      })
-      .select()
-      .single();
+    // Generate multiple variations
+    if (generateVariations && !selectedStyle) {
+      console.log('[GENERATE] Generating AI variations...');
+      const variations = await generateAIVariations(
+        commitMessage,
+        diffSummary,
+        repoName || repoFullName?.split('/')[1] || 'my project',
+        platform
+      );
 
-    if (postError) {
-      console.error('[GENERATE] Error creating post:', postError);
-      throw postError;
+      return NextResponse.json({
+        success: true,
+        variations,
+        diffSummary,
+        usedAI: true,
+      });
     }
 
-    // Update commit to mark as post generated
-    if (commitId) {
-      await supabaseAdmin
-        .from('github_commits')
-        .update({ 
-          post_generated: true, 
-          post_id: post.id 
+    // Generate single post with selected style
+    const content = await generateSinglePost(
+      commitMessage,
+      diffSummary,
+      repoName || repoFullName?.split('/')[1] || 'my project',
+      platform,
+      selectedStyle || 'casual'
+    );
+
+    // Save to database if requested
+    if (saveToDb) {
+      const { data: post, error: postError } = await supabaseAdmin
+        .from('posts')
+        .insert({
+          user_id: user.id,
+          content: content,
+          platform: platform,
+          status: 'draft',
+          source: 'github',
+          source_commit: commitSha || commitId,
         })
-        .eq('id', commitId);
-    }
+        .select()
+        .single();
 
-    console.log(`[GENERATE] Created ${platform} post from commit`);
+      if (postError) {
+        console.error('[GENERATE] Error creating post:', postError);
+        throw postError;
+      }
+
+      // Update commit to mark as post generated
+      if (commitId) {
+        await supabaseAdmin
+          .from('github_commits')
+          .update({ 
+            post_generated: true, 
+            post_id: post.id 
+          })
+          .eq('id', commitId);
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        post,
+        content,
+        usedAI: true,
+      });
+    }
 
     return NextResponse.json({ 
       success: true, 
-      post: post,
-      content: content,
-      usedAI: !!diffAnalysis,
-      diffAnalysis: diffAnalysis
+      content,
+      usedAI: true,
     });
 
   } catch (err) {
@@ -113,11 +142,10 @@ export async function POST(request) {
 }
 
 // ==========================================
-// AI-POWERED DIFF ANALYSIS
+// FETCH DIFF FROM GITHUB
 // ==========================================
 
-async function generateWithDiffAnalysis(userId, repoFullName, commitSha, commitMessage, repoName, platform, tone) {
-  // Get GitHub access token
+async function fetchDiffSummary(userId, repoFullName, commitSha) {
   const { data: account } = await supabaseAdmin
     .from('connected_accounts')
     .select('access_token')
@@ -130,7 +158,6 @@ async function generateWithDiffAnalysis(userId, repoFullName, commitSha, commitM
     throw new Error('GitHub not connected');
   }
 
-  // Fetch commit details with diff from GitHub
   const commitResponse = await fetch(
     `https://api.github.com/repos/${repoFullName}/commits/${commitSha}`,
     {
@@ -146,248 +173,213 @@ async function generateWithDiffAnalysis(userId, repoFullName, commitSha, commitM
   }
 
   const commitData = await commitResponse.json();
-  
-  // Extract and process diff information
-  const diffSummary = processDiff(commitData);
-  
-  // Generate post using Claude
-  const content = await generateWithClaude(
-    commitMessage,
-    diffSummary,
-    repoName,
-    platform,
-    tone
-  );
-
-  return { content, diffSummary };
+  return processDiff(commitData);
 }
 
 function processDiff(commitData) {
   const files = commitData.files || [];
   
-  // Filter out noise files
   const ignorePatterns = [
-    'package-lock.json',
-    'yarn.lock',
-    'pnpm-lock.yaml',
-    '.gitignore',
-    '.env.example',
-    '.DS_Store',
-    'node_modules',
-    '*.min.js',
-    '*.min.css',
+    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+    '.gitignore', '.env', '.DS_Store', 'node_modules',
   ];
 
   const relevantFiles = files.filter(file => {
     const filename = file.filename.toLowerCase();
-    return !ignorePatterns.some(pattern => {
-      if (pattern.includes('*')) {
-        const regex = new RegExp(pattern.replace('*', '.*'));
-        return regex.test(filename);
-      }
-      return filename.includes(pattern.toLowerCase());
-    });
+    return !ignorePatterns.some(pattern => filename.includes(pattern.toLowerCase()));
   });
 
-  // Categorize files
   const categorized = {
-    components: [],
-    api: [],
-    pages: [],
-    styles: [],
-    config: [],
-    other: [],
+    components: relevantFiles.filter(f => f.filename.toLowerCase().includes('component') || f.filename.includes('/ui/')),
+    api: relevantFiles.filter(f => f.filename.includes('/api/') || f.filename.includes('route.')),
+    pages: relevantFiles.filter(f => f.filename.includes('page.') || f.filename.includes('/app/')),
+    styles: relevantFiles.filter(f => f.filename.includes('.css') || f.filename.includes('style')),
   };
 
-  relevantFiles.forEach(file => {
-    const path = file.filename.toLowerCase();
-    if (path.includes('component') || path.includes('/ui/')) {
-      categorized.components.push(file);
-    } else if (path.includes('/api/') || path.includes('route.')) {
-      categorized.api.push(file);
-    } else if (path.includes('/page') || path.includes('/app/') && path.endsWith('.js')) {
-      categorized.pages.push(file);
-    } else if (path.includes('.css') || path.includes('style') || path.includes('tailwind')) {
-      categorized.styles.push(file);
-    } else if (path.includes('config') || path.includes('.json') && !path.includes('package')) {
-      categorized.config.push(file);
-    } else {
-      categorized.other.push(file);
-    }
-  });
-
-  // Build summary
-  const totalAdditions = relevantFiles.reduce((sum, f) => sum + (f.additions || 0), 0);
-  const totalDeletions = relevantFiles.reduce((sum, f) => sum + (f.deletions || 0), 0);
-
-  // Get patches (truncated for API limits)
   const patches = relevantFiles
-    .filter(f => f.patch && f.additions > 0) // Only files with actual changes
-    .slice(0, 5) // Max 5 files
+    .filter(f => f.patch && f.additions > 0)
+    .slice(0, 3)
     .map(f => ({
       filename: f.filename,
       additions: f.additions,
       deletions: f.deletions,
-      patch: (f.patch || '').slice(0, 500), // Truncate long patches
+      patch: (f.patch || '').slice(0, 400),
     }));
 
   return {
     totalFiles: relevantFiles.length,
-    totalAdditions,
-    totalDeletions,
+    totalAdditions: relevantFiles.reduce((sum, f) => sum + (f.additions || 0), 0),
+    totalDeletions: relevantFiles.reduce((sum, f) => sum + (f.deletions || 0), 0),
     categorized: {
       components: categorized.components.map(f => f.filename),
       api: categorized.api.map(f => f.filename),
       pages: categorized.pages.map(f => f.filename),
-      styles: categorized.styles.map(f => f.filename),
-      other: categorized.other.map(f => f.filename),
     },
     patches,
   };
 }
 
-async function generateWithClaude(commitMessage, diffSummary, repoName, platform, tone) {
-  const toneInstructions = {
-    casual: 'Write in a casual, friendly tone. Use emojis sparingly. Be conversational like talking to a friend.',
-    professional: 'Write in a professional but approachable tone. Focus on business value and impact.',
-    funny: 'Write in a humorous, self-deprecating tone. Make it relatable to other developers. Be witty.',
-    hype: 'Write with high energy and excitement. Use emojis. Celebrate the win!',
-  };
+// ==========================================
+// GENERATE MULTIPLE AI VARIATIONS
+// ==========================================
 
-  const platformInstructions = {
-    x: 'Keep it under 280 characters. Make it punchy and engaging. Include #buildinpublic hashtag.',
-    linkedin: 'Can be longer (up to 500 chars). More professional. Add relevant hashtags at the end.',
-    reddit: 'Write like a genuine community member sharing progress. No hashtags. Be humble and helpful.',
-  };
+async function generateAIVariations(commitMessage, diffSummary, repoName, platform) {
+  const diffContext = diffSummary ? `
+## Code Changes
+- ${diffSummary.totalFiles} files changed (+${diffSummary.totalAdditions}/-${diffSummary.totalDeletions} lines)
+${diffSummary.categorized.components?.length > 0 ? `- Components: ${diffSummary.categorized.components.slice(0, 3).join(', ')}` : ''}
+${diffSummary.categorized.api?.length > 0 ? `- API: ${diffSummary.categorized.api.slice(0, 3).join(', ')}` : ''}
+${diffSummary.patches?.length > 0 ? `
+## Code Snippets
+${diffSummary.patches.map(p => `${p.filename}:\n\`\`\`\n${p.patch}\n\`\`\``).join('\n')}
+` : ''}` : '';
 
-  const prompt = `You are a developer who builds in public. Write a social media post about a code commit.
+  const prompt = `You are helping a developer write build-in-public tweets about their code commit.
 
 ## Commit Message
 ${commitMessage}
 
-## What Changed (from git diff)
-- ${diffSummary.totalFiles} files changed
-- ${diffSummary.totalAdditions} additions, ${diffSummary.totalDeletions} deletions
-${diffSummary.categorized.components.length > 0 ? `- Components: ${diffSummary.categorized.components.join(', ')}` : ''}
-${diffSummary.categorized.api.length > 0 ? `- API routes: ${diffSummary.categorized.api.join(', ')}` : ''}
-${diffSummary.categorized.pages.length > 0 ? `- Pages: ${diffSummary.categorized.pages.join(', ')}` : ''}
-${diffSummary.categorized.styles.length > 0 ? `- Styles updated` : ''}
-
-## Code Snippets
-${diffSummary.patches.slice(0, 3).map(p => `
-File: ${p.filename}
-\`\`\`
-${p.patch}
-\`\`\`
-`).join('\n')}
-
 ## Project
 ${repoName}
+${diffContext}
 
-## Tone
-${toneInstructions[tone] || toneInstructions.casual}
+## Task
+Generate 5 DIFFERENT tweet variations for this commit. Each should have a unique style/angle:
 
-## Platform
-${platformInstructions[platform] || platformInstructions.x}
+1. **Short & Punchy** - Under 100 chars. Impactful one-liner.
+2. **Problem → Solution** - What problem this solves. Relatable pain point.
+3. **Behind the Scenes** - What you actually built/coded. Technical but accessible.
+4. **Milestone/Progress** - Frame it as progress on the journey.
+5. **Casual/Conversational** - Like texting a dev friend about what you shipped.
 
-## Instructions
-1. Focus on what the user will benefit from, not technical implementation details
-2. Make it sound human, not AI-generated
-3. Don't mention file names or code specifics unless they're interesting
-4. Capture the essence of what was built/fixed
-5. Be authentic - developers can smell fake enthusiasm
+## Rules
+- Each tweet MUST be under 280 characters
+- Include #buildinpublic only on some, not all
+- Sound human, not AI-generated
+- Focus on user value, not just technical details
+- Use emojis sparingly and naturally
+- Don't start every tweet with "Just shipped" or similar
 
-Write ONLY the post content, nothing else. No quotes, no explanations.`;
+## Output Format
+Return ONLY a JSON array with exactly 5 objects:
+[
+  {"style": "short", "label": "Short & Punchy", "content": "tweet here"},
+  {"style": "problem", "label": "Problem → Solution", "content": "tweet here"},
+  {"style": "technical", "label": "Behind the Scenes", "content": "tweet here"},
+  {"style": "milestone", "label": "Milestone Update", "content": "tweet here"},
+  {"style": "casual", "label": "Casual", "content": "tweet here"}
+]
+
+Return ONLY the JSON array, no other text.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content[0].text.trim();
+    
+    // Parse JSON from response
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.error('[GENERATE] Could not parse JSON from AI response:', text);
+      throw new Error('Invalid AI response format');
+    }
+
+    const variations = JSON.parse(jsonMatch[0]);
+    
+    // Validate and ensure under 280 chars
+    return variations.map(v => ({
+      ...v,
+      content: v.content.length > 280 ? v.content.slice(0, 277) + '...' : v.content,
+      charCount: Math.min(v.content.length, 280),
+    }));
+
+  } catch (err) {
+    console.error('[GENERATE] AI variation generation failed:', err);
+    // Return fallback variations
+    return generateFallbackVariations(commitMessage, repoName, platform);
+  }
+}
+
+// ==========================================
+// GENERATE SINGLE POST
+// ==========================================
+
+async function generateSinglePost(commitMessage, diffSummary, repoName, platform, style) {
+  const stylePrompts = {
+    short: 'Write a short, punchy tweet under 100 characters. One impactful line.',
+    problem: 'Frame this as solving a problem. Start with the pain point, then the solution.',
+    technical: 'Share what you actually built. Technical but accessible to other devs.',
+    milestone: 'Frame this as progress/milestone on your building journey.',
+    casual: 'Write like you\'re texting a dev friend about what you just shipped.',
+  };
+
+  const prompt = `Write a single tweet about this commit:
+
+Commit: ${commitMessage}
+Project: ${repoName}
+${diffSummary ? `Files changed: ${diffSummary.totalFiles}` : ''}
+
+Style: ${stylePrompts[style] || stylePrompts.casual}
+
+Rules:
+- Under 280 characters
+- Sound human, not AI
+- Include #buildinpublic if it fits naturally
+
+Write ONLY the tweet, nothing else.`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 300,
-    messages: [
-      { role: 'user', content: prompt }
-    ],
+    messages: [{ role: 'user', content: prompt }],
   });
 
-  const generatedContent = response.content[0].text.trim();
-  
-  // Ensure X posts are under 280 chars
-  if (platform === 'x' && generatedContent.length > 280) {
-    // Ask Claude to shorten it
-    const shortenResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 150,
-      messages: [
-        { 
-          role: 'user', 
-          content: `Shorten this tweet to under 280 characters while keeping the essence:\n\n${generatedContent}\n\nWrite ONLY the shortened tweet, nothing else.`
-        }
-      ],
-    });
-    return shortenResponse.content[0].text.trim();
-  }
-
-  return generatedContent;
+  return response.content[0].text.trim();
 }
 
 // ==========================================
-// FALLBACK TEMPLATE GENERATION
+// FALLBACK VARIATIONS (NO AI)
 // ==========================================
 
-function generatePostContent(message, repoName, tone, platform) {
-  // Clean up commit message (remove conventional commit prefix)
-  const cleanMessage = message
+function generateFallbackVariations(commitMessage, repoName, platform) {
+  const cleanMessage = commitMessage
     .replace(/^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?:\s*/i, '')
     .trim();
 
-  // Determine commit type
-  const lowerMessage = message.toLowerCase();
-  let type = 'default';
-  if (lowerMessage.startsWith('feat')) type = 'feat';
-  else if (lowerMessage.startsWith('fix')) type = 'fix';
-  else if (lowerMessage.startsWith('docs')) type = 'docs';
-  else if (lowerMessage.startsWith('refactor')) type = 'refactor';
-
-  const templates = {
-    casual: {
-      feat: `Just shipped: ${cleanMessage} 🚀\n\nBuilding ${repoName} one commit at a time.\n\n#buildinpublic`,
-      fix: `Squashed a bug 🐛\n\n${cleanMessage}\n\nOnward! #buildinpublic`,
-      docs: `Updated the docs 📚\n\n${cleanMessage}\n\n#buildinpublic`,
-      refactor: `Cleaned up some code 🧹\n\n${cleanMessage}\n\n#buildinpublic`,
-      default: `New update to ${repoName}:\n\n${cleanMessage}\n\n#buildinpublic`,
+  return [
+    {
+      style: 'short',
+      label: 'Short & Punchy',
+      content: `Shipped: ${cleanMessage} 🚀 #buildinpublic`,
+      charCount: `Shipped: ${cleanMessage} 🚀 #buildinpublic`.length,
     },
-    professional: {
-      feat: `New feature released: ${cleanMessage}\n\nContinuing to improve ${repoName} based on user feedback.\n\n#buildinpublic`,
-      fix: `Bug fix deployed: ${cleanMessage}\n\nMaintaining quality and reliability.\n\n#buildinpublic`,
-      docs: `Documentation update: ${cleanMessage}\n\n#buildinpublic`,
-      refactor: `Code improvement: ${cleanMessage}\n\n#buildinpublic`,
-      default: `Update: ${cleanMessage}\n\n#buildinpublic`,
+    {
+      style: 'problem',
+      label: 'Problem → Solution',
+      content: `The problem: needed ${cleanMessage.toLowerCase()}\n\nThe solution: built it myself\n\n#buildinpublic`,
+      charCount: 0,
     },
-    funny: {
-      feat: `Me: "This will take 2 hours"\n\n*3 days later*\n\n${cleanMessage} 😅\n\n#buildinpublic`,
-      fix: `The bug: *exists*\nMe: "not anymore" 😤\n\n${cleanMessage}\n\n#buildinpublic`,
-      docs: `Actually wrote documentation for once 📝\n\n${cleanMessage}\n\nMiracles do happen #buildinpublic`,
-      refactor: `Spent 2 hours renaming variables\n\nWorth it? Absolutely.\n\n${cleanMessage}\n\n#buildinpublic`,
-      default: `Another day, another commit 💪\n\n${cleanMessage}\n\n#buildinpublic`,
+    {
+      style: 'technical',
+      label: 'Behind the Scenes',
+      content: `Today's build: ${cleanMessage}\n\nWorking on ${repoName}. Progress feels good.\n\n#buildinpublic`,
+      charCount: 0,
     },
-    hype: {
-      feat: `🚀 SHIPPED! 🚀\n\n${cleanMessage}\n\nLET'S GOOO!\n\n#buildinpublic`,
-      fix: `BUG = DESTROYED 💥\n\n${cleanMessage}\n\n#buildinpublic`,
-      docs: `Docs updated! 📚✨\n\n${cleanMessage}\n\n#buildinpublic`,
-      refactor: `Code is CLEAN 🧼✨\n\n${cleanMessage}\n\n#buildinpublic`,
-      default: `NEW DROP 🔥\n\n${cleanMessage}\n\n#buildinpublic`,
+    {
+      style: 'milestone',
+      label: 'Milestone Update',
+      content: `✅ ${cleanMessage}\n\nAnother step forward on ${repoName}.\n\n#buildinpublic`,
+      charCount: 0,
     },
-  };
-
-  const toneTemplates = templates[tone] || templates.casual;
-  let content = toneTemplates[type] || toneTemplates.default;
-
-  // Platform-specific adjustments
-  if (platform === 'linkedin') {
-    content = content
-      .replace('#buildinpublic', '')
-      .trim() + '\n\n#SoftwareDevelopment #Tech #BuildInPublic #StartupLife';
-  } else if (platform === 'reddit') {
-    content = `${cleanMessage}\n\nWorking on ${repoName}. Thought I'd share my progress!`;
-  }
-
-  return content;
+    {
+      style: 'casual',
+      label: 'Casual',
+      content: `Just wrapped up: ${cleanMessage}\n\nOnward 💪`,
+      charCount: 0,
+    },
+  ].map(v => ({ ...v, charCount: v.content.length }));
 }

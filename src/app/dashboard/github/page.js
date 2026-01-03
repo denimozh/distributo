@@ -800,9 +800,16 @@ function CommitsTab({ commits, onGeneratePost }) {
     ? commits 
     : commits.filter(c => getCommitType(c.message).type === filter);
 
+  const [showVariationModal, setShowVariationModal] = useState(false);
+  const [variations, setVariations] = useState([]);
+  const [generatingCommit, setGeneratingCommit] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const handleGeneratePost = async (commit) => {
     try {
-      toast.info('Analyzing commit and generating post... 🤖');
+      setIsGenerating(true);
+      setGeneratingCommit(commit);
+      toast.info('Analyzing commit and generating variations... 🤖');
       
       const response = await fetch('/api/github/generate-post', {
         method: 'POST',
@@ -814,26 +821,91 @@ function CommitsTab({ commits, onGeneratePost }) {
           repoName: commit.github_repos?.repo_name || 'my project',
           repoFullName: commit.github_repos?.repo_full_name,
           platform: 'x',
-          tone: 'casual',
-          useAI: true,
+          generateVariations: true,
+          saveToDb: false,
         }),
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate post');
+      if (data.variations) {
+        setVariations(data.variations);
+        setShowVariationModal(true);
+        if (data.usedAI) {
+          toast.success('AI generated 5 variations!');
+        } else {
+          toast.info('Using templates (add ANTHROPIC_API_KEY for AI)');
+        }
+      } else if (data.error) {
+        throw new Error(data.error);
       }
-
-      if (data.usedAI) {
-        toast.success('AI-powered post generated! 🎉');
-      } else {
-        toast.success('Post generated! Check Generated Posts tab');
-      }
-      onGeneratePost(commit);
     } catch (err) {
       console.error('Generate post error:', err);
       toast.error(err.message || 'Failed to generate post');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSelectVariation = async (variation) => {
+    try {
+      toast.info('Saving post...');
+      
+      const response = await fetch('/api/github/generate-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commitId: generatingCommit.id,
+          commitSha: generatingCommit.sha,
+          commitMessage: generatingCommit.message,
+          repoName: generatingCommit.github_repos?.repo_name || 'my project',
+          repoFullName: generatingCommit.github_repos?.repo_full_name,
+          platform: 'x',
+          generateVariations: false,
+          selectedStyle: variation.style,
+          saveToDb: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Post saved! Check Generated Posts tab');
+        setShowVariationModal(false);
+        setVariations([]);
+        setGeneratingCommit(null);
+        onGeneratePost(generatingCommit);
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleSaveCustomContent = async (customContent) => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { error } = await supabase.from('posts').insert({
+        user_id: user.id,
+        content: customContent,
+        platform: 'x',
+        status: 'draft',
+        source: 'github',
+        source_commit: generatingCommit?.sha,
+      });
+
+      if (error) throw error;
+
+      toast.success('Post saved!');
+      setShowVariationModal(false);
+      setVariations([]);
+      setGeneratingCommit(null);
+      onGeneratePost(generatingCommit);
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 
@@ -896,9 +968,20 @@ function CommitsTab({ commits, onGeneratePost }) {
                     ) : (
                       <button
                         onClick={() => handleGeneratePost(commit)}
-                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-medium hover:shadow-lg"
+                        disabled={isGenerating && generatingCommit?.id === commit.id}
+                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-70 flex items-center gap-2"
                       >
-                        ✨ Generate Post
+                        {isGenerating && generatingCommit?.id === commit.id ? (
+                          <>
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Generating...
+                          </>
+                        ) : (
+                          <>✨ Generate Post</>
+                        )}
                       </button>
                     )}
                   </div>
@@ -914,6 +997,180 @@ function CommitsTab({ commits, onGeneratePost }) {
           <p className="text-gray-500">Push some code to your connected repos to see commits here</p>
         </div>
       )}
+
+      {/* Variation Selector Modal */}
+      {showVariationModal && (
+        <VariationSelectorModal
+          variations={variations}
+          commit={generatingCommit}
+          onSelect={handleSelectVariation}
+          onSaveCustom={handleSaveCustomContent}
+          onClose={() => {
+            setShowVariationModal(false);
+            setVariations([]);
+            setGeneratingCommit(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// VARIATION SELECTOR MODAL
+// ==========================================
+
+function VariationSelectorModal({ variations, commit, onSelect, onSaveCustom, onClose }) {
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [customContent, setCustomContent] = useState('');
+  const [isCustom, setIsCustom] = useState(false);
+
+  const charCount = isCustom ? customContent.length : (variations[selectedIndex]?.content.length || 0);
+  const isOverLimit = charCount > 280;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-purple-50 to-indigo-50">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">✨ Choose Your Post Style</h3>
+            <p className="text-sm text-gray-500 mt-0.5">
+              AI generated 5 variations • Select one or customize
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-white rounded-lg"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Commit Info */}
+        <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-mono text-xs bg-gray-200 px-2 py-0.5 rounded text-gray-600">
+              {commit?.sha?.slice(0, 7)}
+            </span>
+            <span className="text-gray-700 font-medium">{commit?.message}</span>
+          </div>
+        </div>
+
+        {/* Variations */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="space-y-3">
+            {variations.map((variation, index) => (
+              <button
+                key={variation.style}
+                onClick={() => {
+                  setSelectedIndex(index);
+                  setIsCustom(false);
+                  setCustomContent(variation.content);
+                }}
+                className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+                  selectedIndex === index && !isCustom
+                    ? 'border-purple-500 bg-purple-50'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-sm font-semibold ${
+                    selectedIndex === index && !isCustom ? 'text-purple-700' : 'text-gray-700'
+                  }`}>
+                    {variation.label}
+                  </span>
+                  <span className={`text-xs ${
+                    variation.charCount > 280 ? 'text-red-500' : 'text-gray-400'
+                  }`}>
+                    {variation.charCount}/280
+                  </span>
+                </div>
+                <p className="text-gray-800 whitespace-pre-wrap text-sm leading-relaxed">
+                  {variation.content}
+                </p>
+              </button>
+            ))}
+
+            {/* Custom Option */}
+            <div
+              className={`p-4 rounded-xl border-2 transition-all ${
+                isCustom
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-dashed border-gray-300 hover:border-gray-400'
+              }`}
+            >
+              <button
+                onClick={() => {
+                  setIsCustom(true);
+                  setSelectedIndex(null);
+                }}
+                className="w-full text-left"
+              >
+                <span className={`text-sm font-semibold ${isCustom ? 'text-purple-700' : 'text-gray-500'}`}>
+                  ✏️ Write Custom
+                </span>
+              </button>
+              
+              {isCustom && (
+                <div className="mt-3">
+                  <textarea
+                    value={customContent}
+                    onChange={(e) => setCustomContent(e.target.value)}
+                    placeholder="Write your own post..."
+                    className={`w-full min-h-[100px] p-3 border rounded-lg focus:outline-none focus:ring-2 resize-none text-sm ${
+                      isOverLimit
+                        ? 'border-red-300 focus:ring-red-500/20'
+                        : 'border-gray-200 focus:ring-purple-500/20'
+                    }`}
+                    autoFocus
+                  />
+                  <div className={`text-xs mt-1 ${isOverLimit ? 'text-red-500' : 'text-gray-400'}`}>
+                    {customContent.length}/280 characters
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+          <div className="text-sm text-gray-500">
+            {selectedIndex !== null && !isCustom && (
+              <span>Selected: <strong>{variations[selectedIndex]?.label}</strong></span>
+            )}
+            {isCustom && customContent && (
+              <span className={isOverLimit ? 'text-red-500' : ''}>
+                Custom post • {customContent.length}/280 chars
+              </span>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (isCustom && customContent) {
+                  onSaveCustom(customContent);
+                } else if (selectedIndex !== null) {
+                  onSelect(variations[selectedIndex]);
+                }
+              }}
+              disabled={(selectedIndex === null && !isCustom) || (isCustom && !customContent) || isOverLimit}
+              className="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-sm font-medium hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save as Draft
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
