@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
+import { createClient as createServerClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
-const supabase = createClient(
+const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
@@ -16,18 +16,17 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Repository name required' }, { status: 400 });
     }
 
-    // Get user
-    const cookieStore = cookies();
-    const accessToken = cookieStore.get('sb-access-token')?.value;
+    // Get user using server client
+    const supabase = await createServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
-    
-    if (!user) {
+    if (userError || !user) {
+      console.error('Auth error:', userError);
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     // Get GitHub access token
-    const { data: account, error: accountError } = await supabase
+    const { data: account, error: accountError } = await supabaseAdmin
       .from('connected_accounts')
       .select('access_token')
       .eq('user_id', user.id)
@@ -35,7 +34,8 @@ export async function POST(request) {
       .eq('is_active', true)
       .single();
 
-    if (!account) {
+    if (accountError || !account) {
+      console.error('Account error:', accountError);
       return NextResponse.json({ error: 'GitHub not connected' }, { status: 400 });
     }
 
@@ -44,6 +44,8 @@ export async function POST(request) {
 
     // Create webhook on GitHub
     const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/github/webhook`;
+    
+    console.log(`[WEBHOOK] Creating webhook for ${repoFullName} -> ${webhookUrl}`);
     
     const response = await fetch(`https://api.github.com/repos/${repoFullName}/hooks`, {
       method: 'POST',
@@ -67,11 +69,12 @@ export async function POST(request) {
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('GitHub webhook error:', error);
       
       // Check if webhook already exists
       if (error.errors?.some(e => e.message?.includes('already exists'))) {
         console.log('Webhook already exists for', repoFullName);
-        return NextResponse.json({ message: 'Webhook already exists' });
+        return NextResponse.json({ message: 'Webhook already exists', success: true });
       }
       
       throw new Error(error.message || 'Failed to create webhook');
@@ -79,8 +82,8 @@ export async function POST(request) {
 
     const webhookData = await response.json();
 
-    // Update repo with webhook info
-    await supabase
+    // Update repo with webhook info - use correct column name
+    const { error: updateError } = await supabaseAdmin
       .from('github_repos')
       .update({
         webhook_id: webhookData.id,
@@ -88,7 +91,11 @@ export async function POST(request) {
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id)
-      .eq('full_name', repoFullName);
+      .eq('repo_full_name', repoFullName);  // Fixed column name
+
+    if (updateError) {
+      console.error('Update error:', updateError);
+    }
 
     console.log(`[WEBHOOK] Created webhook for ${repoFullName}: ${webhookData.id}`);
 
@@ -108,18 +115,16 @@ export async function DELETE(request) {
   try {
     const { repoFullName, webhookId } = await request.json();
 
-    // Get user
-    const cookieStore = cookies();
-    const accessToken = cookieStore.get('sb-access-token')?.value;
+    // Get user using server client
+    const supabase = await createServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
     
-    const { data: { user } } = await supabase.auth.getUser(accessToken);
-    
-    if (!user) {
+    if (userError || !user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     // Get GitHub access token
-    const { data: account } = await supabase
+    const { data: account } = await supabaseAdmin
       .from('connected_accounts')
       .select('access_token')
       .eq('user_id', user.id)
@@ -145,8 +150,8 @@ export async function DELETE(request) {
       throw new Error(error.message || 'Failed to delete webhook');
     }
 
-    // Clear webhook info from repo
-    await supabase
+    // Clear webhook info from repo - use correct column name
+    await supabaseAdmin
       .from('github_repos')
       .update({
         webhook_id: null,
@@ -154,7 +159,7 @@ export async function DELETE(request) {
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id)
-      .eq('full_name', repoFullName);
+      .eq('repo_full_name', repoFullName);  // Fixed column name
 
     console.log(`[WEBHOOK] Deleted webhook for ${repoFullName}`);
 
