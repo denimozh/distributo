@@ -10,7 +10,10 @@ const supabaseAdmin = createClient(
 // Fetch commits for a specific repo
 export async function POST(request) {
   try {
-    const { repoId, repoFullName } = await request.json();
+    const body = await request.json();
+    const { repoId, repoFullName } = body;
+    
+    console.log('[COMMITS] Request body:', { repoId, repoFullName });
 
     if (!repoFullName) {
       return NextResponse.json({ error: 'Repository name required' }, { status: 400 });
@@ -21,11 +24,14 @@ export async function POST(request) {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
+      console.error('[COMMITS] Auth error:', userError);
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
+    
+    console.log('[COMMITS] User:', user.id);
 
     // Get GitHub access token
-    const { data: account } = await supabaseAdmin
+    const { data: account, error: accountError } = await supabaseAdmin
       .from('connected_accounts')
       .select('access_token')
       .eq('user_id', user.id)
@@ -34,10 +40,12 @@ export async function POST(request) {
       .single();
 
     if (!account) {
+      console.error('[COMMITS] No GitHub account found');
       return NextResponse.json({ error: 'GitHub not connected' }, { status: 400 });
     }
 
     // Fetch recent commits from GitHub API
+    console.log('[COMMITS] Fetching from GitHub:', repoFullName);
     const response = await fetch(
       `https://api.github.com/repos/${repoFullName}/commits?per_page=20`,
       {
@@ -50,27 +58,31 @@ export async function POST(request) {
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('[COMMITS] GitHub API error:', error);
       throw new Error(error.message || 'Failed to fetch commits');
     }
 
     const commits = await response.json();
-    console.log(`[COMMITS] Fetched ${commits.length} commits from ${repoFullName}`);
+    console.log(`[COMMITS] Fetched ${commits.length} commits from GitHub`);
 
-    // Get the repo ID from database if not provided
+    // Get the repo ID from database
     let dbRepoId = repoId;
-    if (!dbRepoId) {
-      const { data: repo } = await supabaseAdmin
-        .from('github_repos')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('repo_full_name', repoFullName)
-        .single();
-      dbRepoId = repo?.id;
-    }
-
-    if (!dbRepoId) {
+    
+    // Always verify/fetch from database to ensure correct UUID
+    const { data: repoData, error: repoError } = await supabaseAdmin
+      .from('github_repos')
+      .select('id, repo_name')
+      .eq('user_id', user.id)
+      .eq('repo_full_name', repoFullName)
+      .single();
+    
+    if (repoError || !repoData) {
+      console.error('[COMMITS] Repo not found in DB:', repoError);
       return NextResponse.json({ error: 'Repository not found in database' }, { status: 404 });
     }
+    
+    dbRepoId = repoData.id;
+    console.log('[COMMITS] Found repo in DB:', { id: dbRepoId, name: repoData.repo_name });
 
     // Insert commits (upsert to avoid duplicates)
     const commitsToInsert = commits.map(commit => ({
