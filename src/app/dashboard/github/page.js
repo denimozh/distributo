@@ -420,14 +420,13 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
 
-      // Add repo to database
+      // Add repo to database - using your table's column names
       const { error } = await supabase.from('github_repos').insert({
         user_id: user.id,
-        github_id: repo.id,
-        name: repo.name,
-        full_name: repo.full_name,
-        description: repo.description,
-        url: repo.html_url,
+        repo_id: repo.id,              // bigint - GitHub's repo ID
+        repo_name: repo.name,          // text
+        repo_full_name: repo.full_name, // text
+        repo_url: repo.html_url,       // text
         is_active: true,
       });
 
@@ -531,7 +530,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
                   {availableRepos
                     .filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase()))
                     .map((repo) => {
-                      const alreadyAdded = repos.some(r => r.github_id === repo.id);
+                      const alreadyAdded = repos.some(r => r.repo_id === repo.id);
                       return (
                         <div
                           key={repo.id}
