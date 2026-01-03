@@ -127,12 +127,18 @@ function GitHubAutopilotContent() {
         setRepos(reposData || []);
 
         // Fetch recent commits
-        const { data: commitsData } = await supabase
+        const { data: commitsData, error: commitsError } = await supabase
           .from('github_commits')
           .select('*, github_repos(repo_name, repo_full_name)')
           .eq('user_id', user.id)
           .order('committed_at', { ascending: false })
           .limit(20);
+        
+        if (commitsError) {
+          console.error('Error fetching commits:', commitsError);
+        } else {
+          console.log('Fetched commits:', commitsData?.length || 0);
+        }
         setCommits(commitsData || []);
 
         // Fetch generated posts from commits

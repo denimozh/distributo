@@ -90,14 +90,29 @@ export async function POST(request) {
     // Insert commits one by one to handle duplicates gracefully
     let insertedCount = 0;
     for (const commit of commitsToInsert) {
+      // Check if commit already exists
+      const { data: existing } = await supabaseAdmin
+        .from('github_commits')
+        .select('id')
+        .eq('repo_id', commit.repo_id)
+        .eq('sha', commit.sha)
+        .single();
+      
+      if (existing) {
+        console.log(`[COMMITS] Skipping existing commit ${commit.sha.slice(0, 7)}`);
+        continue;
+      }
+
       const { error } = await supabaseAdmin
         .from('github_commits')
-        .upsert(commit, { 
-          onConflict: 'sha',
-          ignoreDuplicates: true 
-        });
+        .insert(commit);
       
-      if (!error) insertedCount++;
+      if (error) {
+        console.error(`[COMMITS] Error inserting commit ${commit.sha.slice(0, 7)}:`, error);
+      } else {
+        insertedCount++;
+        console.log(`[COMMITS] Inserted commit ${commit.sha.slice(0, 7)}: ${commit.message.slice(0, 50)}`);
+      }
     }
 
     // Update repo commits count
