@@ -802,17 +802,20 @@ function CommitsTab({ commits, onGeneratePost }) {
 
   const handleGeneratePost = async (commit) => {
     try {
-      toast.info('Generating post...');
+      toast.info('Analyzing commit and generating post... 🤖');
       
       const response = await fetch('/api/github/generate-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           commitId: commit.id,
+          commitSha: commit.sha,
           commitMessage: commit.message,
           repoName: commit.github_repos?.repo_name || 'my project',
+          repoFullName: commit.github_repos?.repo_full_name,
           platform: 'x',
           tone: 'casual',
+          useAI: true,
         }),
       });
 
@@ -822,7 +825,11 @@ function CommitsTab({ commits, onGeneratePost }) {
         throw new Error(data.error || 'Failed to generate post');
       }
 
-      toast.success('Post generated! Check Generated Posts tab');
+      if (data.usedAI) {
+        toast.success('AI-powered post generated! 🎉');
+      } else {
+        toast.success('Post generated! Check Generated Posts tab');
+      }
       onGeneratePost(commit);
     } catch (err) {
       console.error('Generate post error:', err);
