@@ -129,7 +129,7 @@ function GitHubAutopilotContent() {
         // Fetch recent commits
         const { data: commitsData } = await supabase
           .from('github_commits')
-          .select('*, github_repos(name, full_name)')
+          .select('*, github_repos(repo_name, repo_full_name)')
           .eq('user_id', user.id)
           .order('committed_at', { ascending: false })
           .limit(20);
@@ -454,7 +454,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
         .update({ is_active: !repo.is_active })
         .eq('id', repo.id);
       
-      toast.success(repo.is_active ? `Paused ${repo.name}` : `Activated ${repo.name}`);
+      toast.success(repo.is_active ? `Paused ${repo.repo_name}` : `Activated ${repo.repo_name}`);
       onUpdate();
     } catch (err) {
       toast.error(err.message);
@@ -464,7 +464,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
   const handleRemoveRepo = async (repo) => {
     try {
       await supabase.from('github_repos').delete().eq('id', repo.id);
-      toast.success(`Removed ${repo.name}`);
+      toast.success(`Removed ${repo.repo_name}`);
       onUpdate();
     } catch (err) {
       toast.error(err.message);
@@ -472,8 +472,8 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
   };
 
   const filteredRepos = repos.filter(r => 
-    r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.full_name.toLowerCase().includes(searchQuery.toLowerCase())
+    (r.repo_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (r.repo_full_name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -528,7 +528,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                   {availableRepos
-                    .filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .filter(r => (r.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
                     .map((repo) => {
                       const alreadyAdded = repos.some(r => r.repo_id === repo.id);
                       return (
@@ -602,7 +602,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900">{repo.name}</span>
+                      <span className="font-semibold text-gray-900">{repo.repo_name}</span>
                       {repo.is_active && (
                         <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full flex items-center gap-1">
                           <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
@@ -610,7 +610,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-gray-500">{repo.full_name}</div>
+                    <div className="text-sm text-gray-500">{repo.repo_full_name}</div>
                     {repo.description && (
                       <div className="text-sm text-gray-400 mt-1">{repo.description}</div>
                     )}
@@ -646,7 +646,7 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
                   <span>✨</span>
                   <span>{repo.posts_generated || 0} posts generated</span>
                 </div>
-                <a href={repo.url} target="_blank" className="flex items-center gap-1 hover:text-purple-600">
+                <a href={repo.repo_url} target="_blank" className="flex items-center gap-1 hover:text-purple-600">
                   <span>↗️</span>
                   <span>View on GitHub</span>
                 </a>
