@@ -471,6 +471,32 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
     }
   };
 
+  const handleSyncCommits = async (repo) => {
+    try {
+      toast.info(`Syncing commits from ${repo.repo_name}...`);
+      
+      const response = await fetch('/api/github/commits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          repoId: repo.id,
+          repoFullName: repo.repo_full_name 
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to sync commits');
+      }
+      
+      toast.success(`Synced ${data.fetched} commits from ${repo.repo_name}!`);
+      onUpdate();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   const filteredRepos = repos.filter(r => 
     (r.repo_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (r.repo_full_name || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -617,6 +643,13 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleSyncCommits(repo)}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    title="Fetch recent commits from GitHub"
+                  >
+                    🔄 Sync
+                  </button>
                   <button
                     onClick={() => handleToggleRepo(repo)}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
