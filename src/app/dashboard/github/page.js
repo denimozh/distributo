@@ -394,10 +394,21 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
     try {
       const response = await fetch('/api/github/repos');
       const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('Repos API error:', data);
+        toast.error(data.error || 'Failed to fetch repositories');
+        return;
+      }
+      
       if (data.repos) {
         setAvailableRepos(data.repos);
+        if (data.repos.length === 0) {
+          toast.info('No repositories found in your GitHub account');
+        }
       }
     } catch (err) {
+      console.error('Fetch repos error:', err);
       toast.error('Failed to fetch repositories');
     } finally {
       setLoadingRepos(false);
@@ -502,6 +513,18 @@ function ReposTab({ repos, connectedAccount, onUpdate }) {
               {loadingRepos ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full"></div>
+                </div>
+              ) : availableRepos.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-4xl mb-3">📂</div>
+                  <p className="text-gray-500">No repositories found</p>
+                  <p className="text-sm text-gray-400 mt-1">Make sure your GitHub account has repositories</p>
+                  <button
+                    onClick={fetchAvailableRepos}
+                    className="mt-4 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200"
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">

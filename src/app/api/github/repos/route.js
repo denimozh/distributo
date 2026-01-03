@@ -1,26 +1,25 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
+import { createClient as createServerClient } from '@/lib/supabase/server';
 
-const supabase = createClient(
+const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 export async function GET(request) {
   try {
-    // Get user from Supabase
-    const cookieStore = cookies();
-    const accessToken = cookieStore.get('sb-access-token')?.value;
+    // Get user from Supabase using server client
+    const supabase = await createServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
-    
-    if (!user) {
+    if (userError || !user) {
+      console.error('Auth error:', userError);
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
     // Get GitHub access token
-    const { data: account, error: accountError } = await supabase
+    const { data: account, error: accountError } = await supabaseAdmin
       .from('connected_accounts')
       .select('access_token')
       .eq('user_id', user.id)
@@ -28,7 +27,8 @@ export async function GET(request) {
       .eq('is_active', true)
       .single();
 
-    if (!account) {
+    if (accountError || !account) {
+      console.error('Account error:', accountError);
       return NextResponse.json({ error: 'GitHub not connected' }, { status: 400 });
     }
 
@@ -42,6 +42,7 @@ export async function GET(request) {
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('GitHub API error:', error);
       throw new Error(error.message || 'Failed to fetch repos');
     }
 
