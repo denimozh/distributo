@@ -98,15 +98,6 @@ export default function DashboardLayout({ children }) {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="p-3">
-          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg text-gray-400 text-sm">
-            <SearchIcon className="w-4 h-4" />
-            <span>Search</span>
-            <span className="ml-auto text-xs bg-white px-1.5 py-0.5 rounded border border-gray-200">⌘K</span>
-          </div>
-        </div>
-
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 pb-4">
           {navigation.map((group) => (
