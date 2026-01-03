@@ -735,12 +735,33 @@ function CommitsTab({ commits, onGeneratePost }) {
     : commits.filter(c => getCommitType(c.message).type === filter);
 
   const handleGeneratePost = async (commit) => {
-    toast.info('Generating post...');
-    // This would call your AI endpoint
-    setTimeout(() => {
+    try {
+      toast.info('Generating post...');
+      
+      const response = await fetch('/api/github/generate-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commitId: commit.id,
+          commitMessage: commit.message,
+          repoName: commit.github_repos?.repo_name || 'my project',
+          platform: 'x',
+          tone: 'casual',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate post');
+      }
+
       toast.success('Post generated! Check Generated Posts tab');
       onGeneratePost(commit);
-    }, 1500);
+    } catch (err) {
+      console.error('Generate post error:', err);
+      toast.error(err.message || 'Failed to generate post');
+    }
   };
 
   return (
@@ -783,7 +804,7 @@ function CommitsTab({ commits, onGeneratePost }) {
                         {commitType.icon} {commitType.type}
                       </span>
                       <span className="text-xs text-gray-400">
-                        {commit.github_repos?.name || 'Unknown repo'}
+                        {commit.github_repos?.repo_name || 'Unknown repo'}
                       </span>
                     </div>
                     <p className="font-medium text-gray-900 mb-2">{commit.message}</p>
