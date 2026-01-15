@@ -1,54 +1,85 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import crypto from "crypto";
-import OAuth from "oauth-1.0a";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// POST a single tweet to X
-async function postToX(accessToken, accessTokenSecret, content, communityId = null) {
-  const oauth = new OAuth({
-    consumer: {
-      key: process.env.X_CLIENT_ID,
-      secret: process.env.X_CLIENT_SECRET,
+// Refresh OAuth 2.0 token if expired
+async function refreshXToken(account) {
+  // Check if token is expired (with 5 min buffer)
+  const now = new Date();
+  const expiresAt = account.token_expires_at ? new Date(account.token_expires_at) : null;
+  
+  if (expiresAt && expiresAt > new Date(now.getTime() + 5 * 60 * 1000)) {
+    // Token still valid
+    return account.access_token;
+  }
+
+  if (!account.refresh_token) {
+    throw new Error("No refresh token available - user needs to reconnect");
+  }
+
+  console.log("Refreshing expired X token...");
+
+  // Refresh the token
+  const basicAuth = Buffer.from(
+    `${process.env.X_CLIENT_ID}:${process.env.X_CLIENT_SECRET}`
+  ).toString("base64");
+
+  const response = await fetch("https://api.twitter.com/2/oauth2/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${basicAuth}`,
     },
-    signature_method: "HMAC-SHA1",
-    hash_function(baseString, key) {
-      return crypto.createHmac("sha1", key).update(baseString).digest("base64");
-    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: account.refresh_token,
+    }),
   });
 
-  const token = {
-    key: accessToken,
-    secret: accessTokenSecret,
-  };
+  const data = await response.json();
 
+  if (!response.ok) {
+    console.error("Token refresh failed:", data);
+    throw new Error("Failed to refresh X token - user may need to reconnect");
+  }
+
+  // Update tokens in database
+  const newExpiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+  
+  await supabaseAdmin
+    .from("connected_accounts")
+    .update({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || account.refresh_token,
+      token_expires_at: newExpiresAt,
+    })
+    .eq("id", account.id);
+
+  console.log("Token refreshed successfully, expires at:", newExpiresAt);
+
+  return data.access_token;
+}
+
+// POST a single tweet to X using OAuth 2.0
+async function postToX(accessToken, content, communityId = null) {
   // Build tweet payload
   const tweetData = { text: content };
   
-  // If posting to a community, add community_id as a string
-  // X API v2 expects community_id as a string parameter
+  // If posting to a community
   if (communityId) {
     tweetData.community_id = String(communityId);
-    // Optionally also share to main timeline
-    tweetData.share_with_followers = false;
   }
 
   console.log("Posting tweet with data:", JSON.stringify(tweetData));
 
-  const url = "https://api.twitter.com/2/tweets";
-  
-  const authHeader = oauth.toHeader(
-    oauth.authorize({ url, method: "POST" }, token)
-  );
-
-  const response = await fetch(url, {
+  const response = await fetch("https://api.twitter.com/2/tweets", {
     method: "POST",
     headers: {
-      ...authHeader,
+      "Authorization": `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(tweetData),
@@ -94,7 +125,7 @@ export async function POST(request) {
       .eq("platform", "x")
       .lte("scheduled_at", now)
       .order("scheduled_at", { ascending: true })
-      .limit(10); // Process 10 at a time
+      .limit(10);
 
     if (fetchError) {
       console.error("Error fetching posts:", fetchError);
@@ -114,7 +145,7 @@ export async function POST(request) {
         // Get user's X credentials
         const { data: account, error: accountError } = await supabaseAdmin
           .from("connected_accounts")
-          .select("access_token, access_token_secret")
+          .select("*")
           .eq("user_id", post.user_id)
           .eq("platform", "x")
           .eq("is_active", true)
@@ -124,22 +155,16 @@ export async function POST(request) {
           throw new Error("No connected X account found");
         }
 
-        if (!account.access_token || !account.access_token_secret) {
-          throw new Error("Missing X OAuth tokens");
-        }
+        // Refresh token if needed
+        const accessToken = await refreshXToken(account);
 
         // Get community ID if posting to a community
         const communityId = post.x_communities?.community_id || null;
         
-        console.log(`Post ${post.id}: community_id FK = ${post.community_id}, X community_id = ${communityId}`);
+        console.log(`Post ${post.id}: X community_id = ${communityId}`);
 
         // Post to X
-        const result = await postToX(
-          account.access_token,
-          account.access_token_secret,
-          post.content,
-          communityId
-        );
+        const result = await postToX(accessToken, post.content, communityId);
 
         // Update post as posted
         await supabaseAdmin
@@ -182,7 +207,7 @@ export async function POST(request) {
   }
 }
 
-// GET endpoint to check status (useful for debugging)
+// GET endpoint to check status
 export async function GET(request) {
   try {
     const now = new Date().toISOString();
