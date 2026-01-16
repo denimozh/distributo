@@ -14,13 +14,17 @@ const anthropic = new Anthropic({
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { userId, count = 5, platforms = ['x'], includeCommunities = true } = body;
+    const { 
+      userId, 
+      postsPerDay = 5, 
+      days = 7, // Generate for a full week
+      platforms = ['x'], 
+    } = body;
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
 
-    // Check if Anthropic API key is set
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 });
     }
@@ -32,12 +36,7 @@ export async function POST(request) {
       .eq('id', userId)
       .single();
 
-    if (profileError) {
-      console.error('Profile error:', profileError);
-      return NextResponse.json({ error: 'Failed to load profile: ' + profileError.message }, { status: 404 });
-    }
-
-    if (!profile) {
+    if (profileError || !profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
 
@@ -48,68 +47,56 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    // Check daily limit (10 posts per day)
-    const today = new Date().toISOString().split('T')[0];
-    const { count: todayCount } = await supabase
-      .from('posts')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', `${today}T00:00:00`)
-      .lte('created_at', `${today}T23:59:59`);
+    // Get product URL
+    const productUrl = profile.product_url || profile.website_url || null;
 
-    const remaining = 10 - (todayCount || 0);
-    if (remaining <= 0) {
-      return NextResponse.json({ 
-        error: 'Daily limit reached (10 posts/day)',
-        limit: 10,
-        used: todayCount 
-      }, { status: 429 });
-    }
-
-    const postsToGenerate = Math.min(count, remaining);
-
-    // Try to get user's X communities (skip if table doesn't exist)
+    // Get user's active X communities
     let communities = [];
-    if (includeCommunities) {
-      try {
-        const { data: userCommunities } = await supabase
-          .from('x_communities')
-          .select('*')
-          .eq('user_id', userId);
-        communities = userCommunities || [];
-      } catch (e) {
-        // Table might not exist, that's fine
-        console.log('x_communities table not found, skipping');
-      }
+    try {
+      const { data: userCommunities } = await supabase
+        .from('x_communities')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+      communities = userCommunities || [];
+    } catch (e) {
+      console.log('x_communities not available');
     }
 
-    // Determine account type context
-    const accountType = profile.account_type || 'personal';
-    const isAgency = accountType === 'agency';
+    // Calculate total posts to generate
+    const totalPosts = postsPerDay * days;
+    
+    console.log(`Generating ${totalPosts} posts (${postsPerDay}/day × ${days} days) for ${profile.product_name}`);
 
     // Generate posts using Claude
-    console.log('Generating posts for:', profile.product_name);
-    const generatedPosts = await generateMarketingPosts({
+    const generatedPosts = await generateWeeklyContent({
       productName: profile.product_name,
       productDescription: profile.product_description,
-      accountType,
-      isAgency,
-      count: postsToGenerate,
-      platforms,
+      productUrl,
+      accountType: profile.account_type || 'personal',
+      targetAudience: profile.target_audience,
+      postsPerDay,
+      days,
       communities,
     });
 
-    console.log('Generated', generatedPosts.length, 'posts');
+    console.log(`AI generated ${generatedPosts.length} posts`);
 
-    // Calculate schedule times (spread across the day, 9am-8pm)
-    const now = new Date();
-    const scheduleTimes = generateScheduleTimes(postsToGenerate, now);
+    // Generate schedule times across the week
+    const scheduleTimes = generateWeeklySchedule(postsPerDay, days);
 
     // Save posts to database
     const savedPosts = [];
     for (let i = 0; i < generatedPosts.length; i++) {
       const post = generatedPosts[i];
       const scheduledAt = scheduleTimes[i];
+
+      // Find community UUID if community_id is specified
+      let communityUuid = null;
+      if (post.communityId) {
+        const community = communities.find(c => c.community_id === post.communityId);
+        communityUuid = community?.id || null;
+      }
 
       const { data: savedPost, error: saveError } = await supabase
         .from('posts')
@@ -120,6 +107,7 @@ export async function POST(request) {
           status: 'pending',
           scheduled_at: scheduledAt.toISOString(),
           source: 'ai',
+          community_id: communityUuid,
         })
         .select()
         .single();
@@ -135,72 +123,113 @@ export async function POST(request) {
       success: true,
       generated: savedPosts.length,
       posts: savedPosts,
-      dailyLimit: 10,
-      dailyUsed: (todayCount || 0) + savedPosts.length,
-      dailyRemaining: remaining - savedPosts.length,
+      schedule: {
+        postsPerDay,
+        days,
+        totalPosts: savedPosts.length,
+        communitiesUsed: communities.length,
+      }
     });
 
   } catch (error) {
-    console.error('Generate batch error:', error);
+    console.error('Content factory error:', error);
     return NextResponse.json({ error: error.message || 'Unknown error' }, { status: 500 });
   }
 }
 
-async function generateMarketingPosts({ productName, productDescription, accountType, isAgency, count, platforms, communities }) {
-  const communityContext = communities.length > 0 
-    ? `\n\nAvailable X Communities to post to:\n${communities.map(c => `- ${c.name} (ID: ${c.community_id})`).join('\n')}`
-    : '';
+async function generateWeeklyContent({ 
+  productName, 
+  productDescription, 
+  productUrl,
+  accountType, 
+  targetAudience,
+  postsPerDay, 
+  days,
+  communities 
+}) {
+  const totalPosts = postsPerDay * days;
+  
+  const communityList = communities.length > 0 
+    ? communities.map(c => `- "${c.name}" (ID: ${c.community_id})`).join('\n')
+    : 'None';
 
-  const accountContext = isAgency 
-    ? `This is an agency account helping clients with marketing.`
-    : accountType === 'product'
-    ? `This is the official product account for ${productName}.`
-    : `This is a personal account of someone building ${productName}.`;
+  const urlInstruction = productUrl 
+    ? `IMPORTANT: Include the product link "${productUrl}" naturally in EVERY post. Place it at the end after a line break.`
+    : 'No product URL provided - focus on building interest and awareness.';
 
-  const prompt = `You are a marketing expert for indie hackers and SaaS founders. Generate ${count} engaging marketing posts for social media.
+  const prompt = `You are a content strategist for indie hackers and SaaS founders. Generate a week's worth of marketing content.
 
-## Product Info
+## Product
 - **Name**: ${productName}
 - **Description**: ${productDescription}
-- **Account Type**: ${accountContext}
-${communityContext}
+- **URL**: ${productUrl || 'Not provided'}
+- **Target Audience**: ${targetAudience || 'Founders, indie hackers, developers'}
+- **Account Type**: ${accountType}
 
-## Requirements
-1. Each post should be unique with a different angle:
-   - Build in public update
-   - Tip/insight related to the product's domain
-   - Milestone or progress share
-   - Behind the scenes
-   - Question to engage audience
-   - Problem/solution format
+## Available X Communities
+${communityList}
 
-2. Keep posts under 280 characters for X
-3. Sound authentic, not salesy or AI-generated
-4. Use 1-2 relevant emojis max
-5. Include subtle call-to-action when appropriate
-6. Mix up the tone: some casual, some professional
-7. NO hashtags (they look spammy on X)
+## Content Requirements
 
+### Volume
+Generate exactly ${totalPosts} posts (${postsPerDay} posts × ${days} days).
+
+### Product Link
+${urlInstruction}
+
+### Formatting Rules
+1. Use proper line breaks for readability (\\n\\n between paragraphs)
+2. Keep main content under 250 chars to leave room for the URL
+3. Structure: Hook → Value → Link
+4. NO hashtags (they look spammy)
+5. 1-2 emojis max, placed naturally
+
+### Content Mix (rotate through these)
+1. **Hook + Problem/Solution** - Start with a relatable problem, offer your product as solution
+2. **Build in Public** - Share progress, learnings, milestones
+3. **Quick Tip** - Actionable advice related to your product's domain
+4. **Question/Engagement** - Ask your audience something to drive replies
+5. **Social Proof/Results** - Share wins, user feedback, metrics
+6. **Behind the Scenes** - What you're working on, challenges faced
+7. **Contrarian Take** - Challenge common assumptions in your space
+
+### Community Distribution
 ${communities.length > 0 ? `
-3. For ${Math.min(2, count)} posts, suggest posting to a specific community that fits the content. Include the community_id in your response.
-` : ''}
+Distribute posts across communities (one post per community per batch of ${postsPerDay}):
+- Assign ${Math.min(communities.length, postsPerDay)} posts to different communities each day
+- Match content to community theme (e.g., build-in-public content for "Build in Public" community)
+- Remaining posts go to main timeline (communityId: null)
+` : 'No communities - all posts go to main timeline.'}
+
+### Voice & Tone
+- Authentic, not corporate
+- Conversational, like talking to a friend
+- Confident but not arrogant
+- Show personality
 
 ## Output Format
-Return a JSON array with exactly ${count} objects:
+Return a JSON array with exactly ${totalPosts} objects:
 [
   {
-    "content": "The post text here",
+    "content": "First line hook\\n\\nMore context and value here.\\n\\n${productUrl || 'yourproduct.com'}",
     "platform": "x",
-    "communityId": null or "community_id_here",
-    "angle": "build_in_public|tip|milestone|behind_scenes|question|problem_solution"
+    "communityId": null or "${communities[0]?.community_id || 'community_id'}",
+    "day": 1,
+    "type": "hook|build_in_public|tip|question|social_proof|behind_scenes|contrarian"
   }
 ]
 
-Only return the JSON array, nothing else.`;
+IMPORTANT: 
+- Ensure proper \\n\\n line breaks in content for readability
+- Every post MUST end with the product URL on its own line
+- Vary the hooks - don't start multiple posts the same way
+- Make each post unique and valuable on its own
+
+Return ONLY the JSON array.`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
+    max_tokens: 8000,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -209,46 +238,50 @@ Only return the JSON array, nothing else.`;
   // Parse JSON from response
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
+    console.error('AI Response:', text);
     throw new Error('Failed to parse AI response');
   }
 
-  return JSON.parse(jsonMatch[0]);
+  const posts = JSON.parse(jsonMatch[0]);
+  
+  // Validate and clean posts
+  return posts.map(post => ({
+    ...post,
+    content: post.content.replace(/\\n/g, '\n'), // Ensure newlines are actual newlines
+  }));
 }
 
-function generateScheduleTimes(count, startFrom) {
+function generateWeeklySchedule(postsPerDay, days) {
   const times = [];
-  const now = new Date(startFrom);
+  const now = new Date();
   
-  // Start from next hour or 9am tomorrow if after 8pm
-  let baseTime = new Date(now);
-  if (now.getHours() >= 20) {
-    // Schedule for tomorrow starting at 9am
-    baseTime.setDate(baseTime.getDate() + 1);
-    baseTime.setHours(9, 0, 0, 0);
-  } else if (now.getHours() < 9) {
-    baseTime.setHours(9, 0, 0, 0);
-  } else {
-    baseTime.setHours(baseTime.getHours() + 1, 0, 0, 0);
-  }
+  // Start from tomorrow at 9am
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() + 1);
+  startDate.setHours(9, 0, 0, 0);
 
-  // Spread posts across available hours (9am-8pm = 11 hours)
-  const hoursAvailable = 20 - baseTime.getHours();
-  const interval = Math.max(1, Math.floor(hoursAvailable / count));
-
-  for (let i = 0; i < count; i++) {
-    const time = new Date(baseTime);
-    time.setHours(time.getHours() + (i * interval));
+  // Optimal posting times (in hours, 24h format)
+  const optimalHours = [9, 11, 13, 15, 17, 19];
+  
+  for (let day = 0; day < days; day++) {
+    const dayDate = new Date(startDate);
+    dayDate.setDate(dayDate.getDate() + day);
     
-    // Add some randomness to minutes (0-30)
-    time.setMinutes(Math.floor(Math.random() * 30));
+    // Skip weekends optionally (uncomment if desired)
+    // if (dayDate.getDay() === 0 || dayDate.getDay() === 6) continue;
     
-    // Don't schedule past 8pm
-    if (time.getHours() >= 20) {
-      time.setDate(time.getDate() + 1);
-      time.setHours(9 + (i % 11), Math.floor(Math.random() * 30), 0, 0);
+    for (let post = 0; post < postsPerDay; post++) {
+      const postTime = new Date(dayDate);
+      
+      // Use optimal hours, cycling through if more posts than optimal times
+      const hour = optimalHours[post % optimalHours.length];
+      postTime.setHours(hour);
+      
+      // Add some randomness to minutes (0-45)
+      postTime.setMinutes(Math.floor(Math.random() * 45));
+      
+      times.push(postTime);
     }
-    
-    times.push(time);
   }
 
   return times;

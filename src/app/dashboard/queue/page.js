@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/Toast";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 export default function ContentQueuePage() {
   const [user, setUser] = useState(null);
@@ -15,7 +17,9 @@ export default function ContentQueuePage() {
   const [editingPost, setEditingPost] = useState(null);
   const [showManualPostModal, setShowManualPostModal] = useState(false);
   const [communities, setCommunities] = useState([]);
-
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  
+  const { addToast } = useToast();
   const supabase = createClient();
 
   useEffect(() => {
@@ -69,24 +73,27 @@ export default function ContentQueuePage() {
 
   const handleApprove = async (postId) => {
     await supabase.from('posts').update({ status: 'scheduled' }).eq('id', postId);
+    addToast('Post approved and scheduled!', 'success');
     await loadData();
   };
 
   const handleDelete = async (postId) => {
-    if (confirm('Are you sure you want to delete this post?')) {
-      await supabase.from('posts').delete().eq('id', postId);
-      await loadData();
-    }
+    await supabase.from('posts').delete().eq('id', postId);
+    setDeleteConfirm(null);
+    addToast('Post deleted', 'success');
+    await loadData();
   };
 
   const handleUpdatePost = async (postId, updates) => {
     await supabase.from('posts').update(updates).eq('id', postId);
     setEditingPost(null);
+    addToast('Post updated successfully!', 'success');
     await loadData();
   };
 
   const handleRetry = async (postId) => {
     await supabase.from('posts').update({ status: 'scheduled' }).eq('id', postId);
+    addToast('Post scheduled for retry', 'info');
     await loadData();
   };
 
@@ -376,7 +383,7 @@ export default function ContentQueuePage() {
                             <RefreshIcon className="w-4 h-4" />
                           </button>
                         )}
-                        <button onClick={() => handleDelete(post.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                        <button onClick={() => setDeleteConfirm(post.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
                           <TrashIcon className="w-4 h-4" />
                         </button>
                       </div>
@@ -396,7 +403,10 @@ export default function ContentQueuePage() {
           communities={communities}
           onClose={() => setEditingPost(null)}
           onSave={handleUpdatePost}
-          onDelete={handleDelete}
+          onDelete={(id) => {
+            setEditingPost(null);
+            setDeleteConfirm(id);
+          }}
           onApprove={handleApprove}
         />
       )}
@@ -409,10 +419,22 @@ export default function ContentQueuePage() {
           onClose={() => setShowManualPostModal(false)}
           onCreated={() => {
             setShowManualPostModal(false);
+            addToast('Post created and scheduled!', 'success');
             loadData();
           }}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => handleDelete(deleteConfirm)}
+        title="Delete Post"
+        message="Are you sure you want to delete this post? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/Toast";
 
 export default function DashboardPage() {
   const [user, setUser] = useState(null);
@@ -17,6 +18,7 @@ export default function DashboardPage() {
   const [actionLoading, setActionLoading] = useState(null); // Track which post is being actioned
 
   const supabase = createClient();
+  const { addToast } = useToast();
 
   useEffect(() => {
     loadDashboardData();
@@ -87,7 +89,7 @@ export default function DashboardPage() {
     setLoading(false);
   };
 
-  const handleGenerateContent = async () => {
+  const handleGenerateContent = async (days = 1) => {
     if (!profile?.product_name) {
       window.location.href = '/onboarding';
       return;
@@ -100,23 +102,24 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          count: 5,
+          postsPerDay: 5,
+          days: days,
           platforms: ['x'],
-          includeCommunities: true,
         }),
       });
 
       const data = await response.json();
       if (data.success) {
+        addToast(`🚀 Generated ${data.generated} posts for ${days} day${days > 1 ? 's' : ''}!`, 'success');
         await loadDashboardData();
       } else if (data.needsOnboarding) {
         window.location.href = '/onboarding';
       } else {
-        alert(data.error || 'Failed to generate content');
+        addToast(data.error || 'Failed to generate content', 'error');
       }
     } catch (error) {
       console.error('Generate error:', error);
-      alert('Failed to generate content');
+      addToast('Failed to generate content', 'error');
     }
     setGenerating(false);
   };
@@ -124,6 +127,7 @@ export default function DashboardPage() {
   const handleApprove = async (postId) => {
     setActionLoading(postId);
     await supabase.from('posts').update({ status: 'scheduled' }).eq('id', postId);
+    addToast('Post approved and scheduled!', 'success');
     await loadDashboardData();
     setActionLoading(null);
   };
@@ -131,6 +135,7 @@ export default function DashboardPage() {
   const handleReject = async (postId) => {
     setActionLoading(postId);
     await supabase.from('posts').delete().eq('id', postId);
+    addToast('Post deleted', 'success');
     await loadDashboardData();
     setActionLoading(null);
   };
@@ -138,6 +143,7 @@ export default function DashboardPage() {
   const handleApproveAll = async () => {
     const ids = pendingPosts.map(p => p.id);
     await supabase.from('posts').update({ status: 'scheduled' }).in('id', ids);
+    addToast(`${ids.length} posts approved!`, 'success');
     await loadDashboardData();
   };
 
@@ -148,6 +154,7 @@ export default function DashboardPage() {
   const handleSavePost = async (postId, newContent) => {
     await supabase.from('posts').update({ content: newContent }).eq('id', postId);
     setEditingPost(null);
+    addToast('Post updated!', 'success');
     await loadDashboardData();
   };
 
@@ -193,23 +200,34 @@ export default function DashboardPage() {
             </h1>
             <p className="text-gray-500 mt-1">Here's your content automation status.</p>
           </div>
-          <button
-            onClick={handleGenerateContent}
-            disabled={generating || needsSetup}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all disabled:opacity-50"
-          >
-            {generating ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Generating...
-              </>
-            ) : (
-              <>
-                <SparklesIcon className="w-5 h-5" />
-                Generate 5 Posts
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleGenerateContent(1)}
+              disabled={generating || needsSetup}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/25 transition-all disabled:opacity-50"
+            >
+              {generating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <SparklesIcon className="w-5 h-5" />
+                  Generate Today
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => handleGenerateContent(7)}
+              disabled={generating || needsSetup}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 transition-all disabled:opacity-50"
+              title="Generate 35 posts (5/day for 7 days)"
+            >
+              <CalendarWeekIcon className="w-5 h-5" />
+              Generate Week
+            </button>
+          </div>
         </div>
 
         {/* Setup Banner */}
@@ -640,6 +658,7 @@ function EditProfileModal({ profile, onClose, onSave }) {
 
 // Icons
 function SparklesIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>; }
+function CalendarWeekIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>; }
 function AlertIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>; }
 function CalendarIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>; }
 function ClockIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>; }

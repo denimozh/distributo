@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ToastProvider } from "@/components/Toast";
 
 export default function DashboardLayout({ children }) {
   const pathname = usePathname();
@@ -72,6 +73,7 @@ export default function DashboardLayout({ children }) {
   }
 
   return (
+    <ToastProvider>
     <div className="min-h-screen bg-[#FAFBFC] flex">
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 w-60 bg-white border-r border-gray-200 flex flex-col z-40">
@@ -168,6 +170,7 @@ export default function DashboardLayout({ children }) {
         {children}
       </main>
     </div>
+    </ToastProvider>
   );
 }
 
