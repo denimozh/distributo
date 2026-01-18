@@ -1,3 +1,4 @@
+// src/app/api/cron/post-scheduled/route.js
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
@@ -15,14 +16,13 @@ export async function GET(request) {
   const cronSecret = process.env.CRON_SECRET;
   
   // In production, require auth
-  if (process.env.NODE_ENV === 'production') {
-    // Accept: "Bearer <secret>" or just "<secret>"
+  if (process.env.NODE_ENV === 'production' && cronSecret) {
     const providedSecret = authHeader?.replace('Bearer ', '').trim();
     
-    if (!cronSecret || providedSecret !== cronSecret) {
+    if (providedSecret !== cronSecret) {
       console.log('[CRON] Unauthorized request');
       return NextResponse.json(
-        { error: 'Unauthorized', hint: 'Add Authorization header with your CRON_SECRET' },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
@@ -84,48 +84,13 @@ export async function GET(request) {
 
         console.log(`[CRON] Processing post ${post.id} for @${account.platform_username}`);
 
-        // Check if token needs refresh
-        let accessToken = account.access_token;
-        const tokenExpiry = new Date(account.token_expires_at);
-        const nowDate = new Date();
-
-        if (tokenExpiry <= nowDate) {
-          console.log(`[CRON] Token expired, refreshing...`);
-          
-          const tokenResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Authorization': `Basic ${Buffer.from(`${process.env.X_CLIENT_ID}:${process.env.X_CLIENT_SECRET}`).toString('base64')}`
-            },
-            body: new URLSearchParams({
-              grant_type: 'refresh_token',
-              refresh_token: account.refresh_token,
-              client_id: process.env.X_CLIENT_ID,
-            })
-          });
-
-          if (!tokenResponse.ok) {
-            const errorText = await tokenResponse.text();
-            console.error('[CRON] Token refresh failed:', errorText);
-            throw new Error('Failed to refresh X token - user may need to reconnect');
-          }
-
-          const tokenData = await tokenResponse.json();
-          accessToken = tokenData.access_token;
-
-          // Update tokens in database
-          await supabase
-            .from('connected_accounts')
-            .update({
-              access_token: tokenData.access_token,
-              refresh_token: tokenData.refresh_token || account.refresh_token,
-              token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', account.id);
-
-          console.log('[CRON] Token refreshed successfully');
+        // Get valid access token (refreshes if needed)
+        let accessToken;
+        try {
+          accessToken = await getValidAccessToken(account);
+        } catch (tokenError) {
+          console.error(`[CRON] Token error:`, tokenError.message);
+          throw new Error(`Token error: ${tokenError.message}`);
         }
 
         // Post to X
@@ -170,11 +135,6 @@ export async function GET(request) {
           })
           .eq('id', post.id);
 
-        // Log community reminder if applicable
-        if (post.community_id) {
-          console.log(`[CRON] 📢 Reminder: Share to community ${post.community_id}`);
-        }
-
         processed++;
         postResult.status = 'posted';
         postResult.tweet_id = tweetId;
@@ -183,12 +143,13 @@ export async function GET(request) {
         console.error(`[CRON] Error processing post ${post.id}:`, postError.message);
         
         const retryCount = (post.retry_count || 0) + 1;
+        const shouldMarkFailed = retryCount >= 3;
         
-        // Update post with error (mark as failed after 3 retries)
+        // Update post with error
         await supabase
           .from('posts')
           .update({
-            status: retryCount >= 3 ? 'failed' : 'scheduled',
+            status: shouldMarkFailed ? 'failed' : 'scheduled',
             error_message: postError.message,
             retry_count: retryCount,
           })
@@ -229,12 +190,122 @@ export async function GET(request) {
   }
 }
 
-// Support POST method too (some cron services use POST)
+// Support POST method too
 export async function POST(request) {
   return GET(request);
 }
 
-// Health check endpoint
-export async function HEAD() {
-  return new NextResponse(null, { status: 200 });
+// ==========================================
+// TOKEN MANAGEMENT (inline for reliability)
+// ==========================================
+
+/**
+ * Get a valid access token, refreshing if needed
+ */
+async function getValidAccessToken(account) {
+  const now = new Date();
+  const expiresAt = account.token_expires_at ? new Date(account.token_expires_at) : null;
+  
+  // Refresh if expired or expiring in less than 5 minutes
+  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+  const needsRefresh = !expiresAt || expiresAt <= fiveMinutesFromNow;
+  
+  if (needsRefresh) {
+    console.log(`[CRON] Token needs refresh (expires: ${expiresAt?.toISOString() || 'unknown'})`);
+    return await refreshXAccessToken(account);
+  }
+  
+  return account.access_token;
+}
+
+/**
+ * Refresh X OAuth 2.0 access token
+ * 
+ * CRITICAL: X refresh tokens are SINGLE-USE!
+ * When you refresh, X gives you a NEW refresh token.
+ * The old refresh token becomes invalid immediately.
+ */
+async function refreshXAccessToken(account) {
+  const clientId = process.env.X_CLIENT_ID;
+  const clientSecret = process.env.X_CLIENT_SECRET;
+
+  if (!account.refresh_token) {
+    throw new Error('No refresh token - user must reconnect');
+  }
+
+  console.log(`[CRON] Refreshing token for @${account.platform_username}`);
+
+  // X requires Basic auth for confidential clients
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+  const response = await fetch('https://api.twitter.com/2/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basicAuth}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: account.refresh_token,
+    }).toString(),
+  });
+
+  const responseText = await response.text();
+  
+  let tokenData;
+  try {
+    tokenData = JSON.parse(responseText);
+  } catch {
+    console.error('[CRON] Invalid token response:', responseText);
+    throw new Error('Invalid response from X');
+  }
+
+  if (!response.ok) {
+    console.error('[CRON] Token refresh failed:', tokenData);
+    
+    if (tokenData.error === 'invalid_grant') {
+      // Mark account as needing reconnection
+      await supabase
+        .from('connected_accounts')
+        .update({
+          is_active: false,
+          error_message: 'Session expired - please reconnect your X account',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', account.id);
+      
+      throw new Error('Session expired - user must reconnect X account');
+    }
+    
+    throw new Error(tokenData.error_description || tokenData.error || 'Token refresh failed');
+  }
+
+  // CRITICAL: Save the NEW refresh token immediately!
+  const newAccessToken = tokenData.access_token;
+  const newRefreshToken = tokenData.refresh_token;
+  const expiresIn = tokenData.expires_in || 7200;
+
+  if (!newRefreshToken) {
+    console.warn('[CRON] No new refresh token received - this may cause issues');
+  }
+
+  const { error: updateError } = await supabase
+    .from('connected_accounts')
+    .update({
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken || account.refresh_token,
+      token_expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', account.id);
+
+  if (updateError) {
+    console.error('[CRON] Failed to save tokens:', updateError);
+    // Continue anyway - current request will work
+  }
+
+  console.log(`[CRON] Token refreshed for @${account.platform_username}`);
+  
+  return newAccessToken;
 }

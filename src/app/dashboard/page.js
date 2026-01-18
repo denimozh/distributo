@@ -423,6 +423,18 @@ export default function DashboardPage() {
                     <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Description</div>
                     <div className="text-sm text-gray-600 line-clamp-3">{profile.product_description}</div>
                   </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Product URL</div>
+                    {profile.product_url ? (
+                      <a href={profile.product_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate block">
+                        {profile.product_url}
+                      </a>
+                    ) : (
+                      <button onClick={() => setShowEditModal(true)} className="text-sm text-amber-600 hover:text-amber-700">
+                        + Add URL (included in all posts)
+                      </button>
+                    )}
+                  </div>
                   {profile.account_type && (
                     <div>
                       <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Account Type</div>
@@ -572,6 +584,7 @@ function EditProfileModal({ profile, onClose, onSave }) {
   const [formData, setFormData] = useState({
     product_name: profile?.product_name || '',
     product_description: profile?.product_description || '',
+    product_url: profile?.product_url || '',
     account_type: profile?.account_type || 'personal',
     target_audience: profile?.target_audience || '',
   });
@@ -612,6 +625,18 @@ function EditProfileModal({ profile, onClose, onSave }) {
               rows={4}
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Product URL</label>
+            <input
+              type="url"
+              value={formData.product_url}
+              onChange={(e) => setFormData(prev => ({ ...prev, product_url: e.target.value }))}
+              placeholder="https://yourproduct.com"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">This link will be included in all generated posts</p>
           </div>
 
           <div>
