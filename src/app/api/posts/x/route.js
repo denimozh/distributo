@@ -13,7 +13,15 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
-    const { content, scheduledAt, postNow, threadId, threadPosition } = body;
+    const { 
+      content, 
+      scheduledAt, 
+      postNow, 
+      threadId, 
+      threadPosition,
+      communityId,        // NEW: Community ID to post to
+      shareWithFollowers  // NEW: Also share to main feed
+    } = body;
 
     // Validate content
     if (!content || content.trim().length === 0) {
@@ -78,6 +86,8 @@ export async function POST(request) {
         scheduled_at: scheduledAt || null,
         thread_id: threadId || null,
         thread_position: threadPosition || 0,
+        community_id: communityId || null,           // NEW
+        share_with_followers: shareWithFollowers || false,  // NEW
       })
       .select()
       .single();
@@ -90,8 +100,14 @@ export async function POST(request) {
     // If posting now, send to X
     if (postNow) {
       try {
-        const result = await postToX(account, content, threadId);
+        const result = await postToX(account, content, threadId, communityId, shareWithFollowers);
         
+        // Build URL based on whether it's a community post
+        let externalUrl = `https://x.com/${account.platform_username}/status/${result.id}`;
+        if (communityId) {
+          externalUrl = `https://x.com/i/communities/${communityId}/post/${result.id}`;
+        }
+
         // Update post with external ID
         await supabase
           .from('posts')
@@ -99,7 +115,7 @@ export async function POST(request) {
             status: 'posted',
             posted_at: new Date().toISOString(),
             external_id: result.id,
-            external_url: `https://twitter.com/${account.platform_username}/status/${result.id}`,
+            external_url: externalUrl,
           })
           .eq('id', post.id);
 
@@ -113,7 +129,7 @@ export async function POST(request) {
         return NextResponse.json({
           success: true,
           post: { ...post, status: 'posted', external_id: result.id },
-          message: 'Tweet posted successfully!',
+          message: communityId ? 'Posted to community!' : 'Tweet posted successfully!',
         });
 
       } catch (twitterError) {
@@ -144,8 +160,8 @@ export async function POST(request) {
   }
 }
 
-// Helper function to post to X API
-async function postToX(account, content, replyToId = null) {
+// Helper function to post to X API - UPDATED with community support
+async function postToX(account, content, replyToId = null, communityId = null, shareWithFollowers = false) {
   // Check if token needs refresh
   let accessToken = account.access_token;
   
@@ -153,6 +169,7 @@ async function postToX(account, content, replyToId = null) {
     accessToken = await refreshXToken(account);
   }
 
+  // Build the payload
   const payload = {
     text: content,
   };
@@ -162,6 +179,13 @@ async function postToX(account, content, replyToId = null) {
     payload.reply = {
       in_reply_to_tweet_id: replyToId,
     };
+  }
+
+  // If posting to a community
+  if (communityId) {
+    payload.community_id = communityId;
+    // share_with_followers determines if the post also appears on your main timeline
+    payload.share_with_followers = shareWithFollowers;
   }
 
   const response = await fetch('https://api.twitter.com/2/tweets', {
@@ -175,7 +199,8 @@ async function postToX(account, content, replyToId = null) {
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.detail || errorData.title || 'Failed to post tweet');
+    console.error('X API error:', errorData);
+    throw new Error(errorData.detail || errorData.title || errorData.errors?.[0]?.message || 'Failed to post tweet');
   }
 
   const data = await response.json();
