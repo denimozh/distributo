@@ -16,7 +16,6 @@ export async function GET(request) {
   
   // In production, require auth
   if (process.env.NODE_ENV === 'production') {
-    // Accept: "Bearer <secret>" or just "<secret>"
     const providedSecret = authHeader?.replace('Bearer ', '').trim();
     
     if (!cronSecret || providedSecret !== cronSecret) {
@@ -33,9 +32,15 @@ export async function GET(request) {
     console.log(`[CRON] ====== Starting at ${now} ======`);
 
     // Get posts that are due to be posted
+    // JOIN with x_communities to get the actual X community ID
     const { data: posts, error: fetchError } = await supabase
       .from('posts')
-      .select('*')
+      .select(`
+        *,
+        x_communities (
+          community_id
+        )
+      `)
       .eq('status', 'scheduled')
       .eq('platform', 'x')
       .lte('scheduled_at', now)
@@ -128,21 +133,28 @@ export async function GET(request) {
           console.log('[CRON] Token refreshed successfully');
         }
 
+        // Get the REAL X community ID from the joined x_communities table
+        // post.community_id is the UUID (foreign key)
+        // post.x_communities?.community_id is the actual X community ID (numeric string)
+        const xCommunityId = post.x_communities?.community_id || null;
+
         // Build the tweet payload
         const tweetPayload = { text: post.content };
 
         // Add community_id if posting to a community
-        if (post.community_id) {
-          tweetPayload.community_id = post.community_id;
-          // Optionally share with followers too
-          if (post.share_with_followers) {
-            tweetPayload.share_with_followers = true;
+        if (xCommunityId) {
+          // Validate it's a proper numeric ID (1-19 digits)
+          if (/^[0-9]{1,19}$/.test(xCommunityId)) {
+            tweetPayload.community_id = xCommunityId;
+            console.log(`[CRON] Posting to X community: ${xCommunityId}`);
+          } else {
+            console.log(`[CRON] Invalid X community ID format: "${xCommunityId}", posting to main timeline`);
           }
-          console.log(`[CRON] Posting to community: ${post.community_id}`);
         }
 
         // Post to X
         console.log(`[CRON] Posting tweet: "${post.content.substring(0, 50)}..."`);
+        console.log(`[CRON] Payload:`, JSON.stringify(tweetPayload));
         
         const tweetResponse = await fetch('https://api.twitter.com/2/tweets', {
           method: 'POST',
@@ -173,9 +185,8 @@ export async function GET(request) {
 
         // Build the external URL
         let externalUrl = `https://x.com/${account.platform_username}/status/${tweetId}`;
-        if (post.community_id) {
-          // Community posts have a different URL format
-          externalUrl = `https://x.com/i/communities/${post.community_id}/post/${tweetId}`;
+        if (xCommunityId) {
+          externalUrl = `https://x.com/i/communities/${xCommunityId}/post/${tweetId}`;
         }
 
         // Update post status
@@ -193,7 +204,7 @@ export async function GET(request) {
         processed++;
         postResult.status = 'posted';
         postResult.tweet_id = tweetId;
-        postResult.community_id = post.community_id || null;
+        postResult.community_id = xCommunityId || null;
 
       } catch (postError) {
         console.error(`[CRON] Error processing post ${post.id}:`, postError.message);
