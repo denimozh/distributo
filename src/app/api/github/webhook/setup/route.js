@@ -42,7 +42,7 @@ export async function POST(request) {
     // Generate webhook secret
     const webhookSecret = crypto.randomBytes(32).toString('hex');
 
-    // Create webhook on GitHub
+    // Create webhook on GitHub with extended events
     const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/github/webhook`;
     
     console.log(`[WEBHOOK] Creating webhook for ${repoFullName} -> ${webhookUrl}`);
@@ -57,7 +57,13 @@ export async function POST(request) {
       body: JSON.stringify({
         name: 'web',
         active: true,
-        events: ['push'],
+        // Extended events for all features
+        events: [
+          'push',           // Commits
+          'release',        // Releases / launches
+          'pull_request',   // PR merged → feature announcements
+          'issues',         // Issue closed → bug fix posts
+        ],
         config: {
           url: webhookUrl,
           content_type: 'json',
@@ -74,6 +80,14 @@ export async function POST(request) {
       // Check if webhook already exists
       if (error.errors?.some(e => e.message?.includes('already exists'))) {
         console.log('Webhook already exists for', repoFullName);
+        
+        // Try to update existing webhook to include new events
+        try {
+          await updateExistingWebhook(repoFullName, account.access_token, webhookUrl);
+        } catch (updateErr) {
+          console.log('Could not update existing webhook:', updateErr.message);
+        }
+        
         return NextResponse.json({ message: 'Webhook already exists', success: true });
       }
       
@@ -82,16 +96,18 @@ export async function POST(request) {
 
     const webhookData = await response.json();
 
-    // Update repo with webhook info - use correct column name
+    // Update repo with webhook info
     const { error: updateError } = await supabaseAdmin
       .from('github_repos')
       .update({
         webhook_id: webhookData.id,
         webhook_secret: webhookSecret,
+        webhook_active: true,
+        webhook_events: ['push', 'release', 'pull_request', 'issues'],
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id)
-      .eq('repo_full_name', repoFullName);  // Fixed column name
+      .eq('repo_full_name', repoFullName);
 
     if (updateError) {
       console.error('Update error:', updateError);
@@ -102,11 +118,56 @@ export async function POST(request) {
     return NextResponse.json({
       success: true,
       webhookId: webhookData.id,
+      events: ['push', 'release', 'pull_request', 'issues'],
     });
 
   } catch (err) {
     console.error('Error setting up webhook:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// Update existing webhook to include new events
+async function updateExistingWebhook(repoFullName, accessToken, webhookUrl) {
+  // First, list existing webhooks
+  const listResponse = await fetch(
+    `https://api.github.com/repos/${repoFullName}/hooks`,
+    {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    }
+  );
+
+  if (!listResponse.ok) {
+    throw new Error('Could not list webhooks');
+  }
+
+  const hooks = await listResponse.json();
+  const ourHook = hooks.find(h => h.config?.url?.includes('/api/github/webhook'));
+
+  if (ourHook) {
+    // Update the webhook with new events
+    const updateResponse = await fetch(
+      `https://api.github.com/repos/${repoFullName}/hooks/${ourHook.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          events: ['push', 'release', 'pull_request', 'issues'],
+          active: true,
+        }),
+      }
+    );
+
+    if (updateResponse.ok) {
+      console.log(`[WEBHOOK] Updated existing webhook for ${repoFullName}`);
+    }
   }
 }
 
@@ -150,16 +211,18 @@ export async function DELETE(request) {
       throw new Error(error.message || 'Failed to delete webhook');
     }
 
-    // Clear webhook info from repo - use correct column name
+    // Clear webhook info from repo
     await supabaseAdmin
       .from('github_repos')
       .update({
         webhook_id: null,
         webhook_secret: null,
+        webhook_active: false,
+        webhook_events: null,
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id)
-      .eq('repo_full_name', repoFullName);  // Fixed column name
+      .eq('repo_full_name', repoFullName);
 
     console.log(`[WEBHOOK] Deleted webhook for ${repoFullName}`);
 

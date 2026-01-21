@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 // ==========================================
@@ -9,44 +9,118 @@ import { createClient } from '@/lib/supabase/client';
 
 const GitHubIcon = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
   </svg>
 );
 
-const XIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+const FireIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z" />
   </svg>
 );
 
-const LinkedInIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+const SparklesIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
   </svg>
 );
 
-const CheckIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+const CheckCircleIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const ClockIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const FolderIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+  </svg>
+);
+
+const CogIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
 
 const RefreshIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/>
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+  </svg>
+);
+
+const PlusIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+  </svg>
+);
+
+const XMarkIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const ChevronRightIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
   </svg>
 );
 
 const ExternalLinkIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-    <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/>
-    <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/>
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+  </svg>
+);
+
+const CalendarIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+  </svg>
+);
+
+const BoltIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+  </svg>
+);
+
+const PaperAirplaneIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+  </svg>
+);
+
+const DocumentIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
   </svg>
 );
 
 const TrashIcon = ({ className }) => (
-  <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/>
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+  </svg>
+);
+
+const EyeIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+const PencilIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
   </svg>
 );
 
@@ -59,18 +133,20 @@ const ToastContext = createContext(null);
 function ToastContainer({ toasts, removeToast }) {
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-      {toasts.map(t => (
+      {toasts.map((toast) => (
         <div
-          key={t.id}
-          onClick={() => removeToast(t.id)}
-          className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium cursor-pointer animate-slide-up max-w-sm ${
-            t.type === 'success' ? 'bg-emerald-500 text-white' :
-            t.type === 'error' ? 'bg-red-500 text-white' :
-            t.type === 'info' ? 'bg-blue-500 text-white' :
-            'bg-gray-900 text-white'
+          key={toast.id}
+          className={`px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-slide-in-right ${
+            toast.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' :
+            toast.type === 'error' ? 'bg-red-50 border border-red-200 text-red-800' :
+            toast.type === 'warning' ? 'bg-amber-50 border border-amber-200 text-amber-800' :
+            'bg-blue-50 border border-blue-200 text-blue-800'
           }`}
         >
-          {t.message}
+          <span className="text-sm font-medium">{toast.message}</span>
+          <button onClick={() => removeToast(toast.id)} className="text-gray-400 hover:text-gray-600">
+            <XMarkIcon className="w-4 h-4" />
+          </button>
         </div>
       ))}
     </div>
@@ -80,19 +156,24 @@ function ToastContainer({ toasts, removeToast }) {
 function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   
-  const addToast = (toast) => {
+  const addToast = ({ type, message, duration = 4000 }) => {
     const id = Date.now();
-    setToasts(prev => [...prev, { ...toast, id }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => removeToast(id), duration);
+    return id;
+  };
+  
+  const removeToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
-
-  const toast = (message) => addToast({ type: 'default', message });
-  toast.success = (message) => addToast({ type: 'success', message });
-  toast.error = (message) => addToast({ type: 'error', message });
-  toast.info = (message) => addToast({ type: 'info', message });
-
+  const toast = (message, options = {}) => addToast({ type: 'info', message, ...options });
+  toast.success = (message, options = {}) => addToast({ type: 'success', message, ...options });
+  toast.error = (message, options = {}) => addToast({ type: 'error', message, ...options });
+  toast.warning = (message, options = {}) => addToast({ type: 'warning', message, ...options });
+  toast.info = (message, options = {}) => addToast({ type: 'info', message, ...options });
+  toast.dismiss = removeToast;
+  
   return (
     <ToastContext.Provider value={toast}>
       {children}
@@ -101,7 +182,11 @@ function ToastProvider({ children }) {
   );
 }
 
-const useToast = () => useContext(ToastContext);
+function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) throw new Error('useToast must be used within ToastProvider');
+  return context;
+}
 
 // ==========================================
 // MAIN PAGE
@@ -112,11 +197,20 @@ export default function GitHubAutopilotPage() {
     <ToastProvider>
       <GitHubAutopilotContent />
       <style jsx global>{`
-        @keyframes slide-up {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+        @keyframes slide-in-right {
+          from { opacity: 0; transform: translateX(100%); }
+          to { opacity: 1; transform: translateX(0); }
         }
-        .animate-slide-up { animation: slide-up 0.2s ease-out; }
+        .animate-slide-in-right {
+          animation: slide-in-right 0.3s ease-out;
+        }
+        @keyframes pulse-soft {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+        .animate-pulse-soft {
+          animation: pulse-soft 2s ease-in-out infinite;
+        }
       `}</style>
     </ToastProvider>
   );
@@ -127,25 +221,48 @@ function GitHubAutopilotContent() {
   const [repos, setRepos] = useState([]);
   const [commits, setCommits] = useState([]);
   const [generatedPosts, setGeneratedPosts] = useState([]);
+  const [streak, setStreak] = useState({ current: 0, longest: 0 });
   const [settings, setSettings] = useState({
     autoGenerate: true,
     autoPost: false,
     platforms: ['x'],
-    commitFilters: ['feat', 'fix', 'launch'],
+    commitFilters: ['feat', 'fix', 'launch', 'ship', 'release'],
     tone: 'casual',
   });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('repos');
+  const [activeSection, setActiveSection] = useState('overview');
+  const [selectedCommit, setSelectedCommit] = useState(null);
+  const [selectedPost, setSelectedPost] = useState(null);
   const supabase = createClient();
   const toast = useToast();
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    
+    // Set up real-time subscription for new commits
+    const channel = supabase
+      .channel('github-commits')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'github_commits',
+      }, (payload) => {
+        setCommits((prev) => [payload.new, ...prev]);
+        toast.success('New commit detected!');
+      })
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const fetchData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Fetch GitHub connected account
       const { data: account } = await supabase
         .from('connected_accounts')
         .select('*')
@@ -157,6 +274,7 @@ function GitHubAutopilotContent() {
       setConnectedAccount(account || null);
 
       if (account) {
+        // Fetch repos
         const { data: reposData } = await supabase
           .from('github_repos')
           .select('*')
@@ -164,50 +282,82 @@ function GitHubAutopilotContent() {
           .order('created_at', { ascending: false });
         setRepos(reposData || []);
 
+        // Fetch commits
         const { data: commitsData } = await supabase
           .from('github_commits')
           .select('*, github_repos(repo_name, repo_full_name)')
           .eq('user_id', user.id)
-          .or('skipped.is.null,skipped.eq.false')
           .order('committed_at', { ascending: false })
-          .limit(30);
+          .limit(50);
         setCommits(commitsData || []);
 
+        // Fetch generated posts
         const { data: postsData } = await supabase
           .from('posts')
           .select('*')
           .eq('user_id', user.id)
           .eq('source', 'github')
           .order('created_at', { ascending: false })
-          .limit(30);
+          .limit(50);
         setGeneratedPosts(postsData || []);
 
+        // Fetch settings
         const { data: settingsData } = await supabase
           .from('github_autopilot_settings')
           .select('settings')
           .eq('user_id', user.id)
           .single();
-        if (settingsData) setSettings(settingsData.settings);
+        if (settingsData?.settings) setSettings(settingsData.settings);
+
+        // Calculate streak
+        calculateStreak(commitsData || []);
       }
-    } catch (err) { 
-      console.error('Fetch error:', err); 
-    } finally { 
-      setLoading(false); 
+    } catch (err) {
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const calculateStreak = (commitsData) => {
+    if (!commitsData.length) {
+      setStreak({ current: 0, longest: 0 });
+      return;
+    }
+
+    const dates = [...new Set(commitsData.map(c => 
+      new Date(c.committed_at).toISOString().split('T')[0]
+    ))].sort().reverse();
+
+    let currentStreak = 0;
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    if (dates[0] === today || dates[0] === yesterday) {
+      currentStreak = 1;
+      for (let i = 1; i < dates.length; i++) {
+        const prevDate = new Date(dates[i - 1]);
+        const currDate = new Date(dates[i]);
+        const diff = (prevDate - currDate) / 86400000;
+        if (diff === 1) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    setStreak({ current: currentStreak, longest: Math.max(currentStreak, streak.longest) });
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F8F9FB] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-xl">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center animate-pulse">
             <GitHubIcon className="w-6 h-6 text-white" />
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-          </div>
+          <div className="text-gray-500 text-sm">Loading GitHub Autopilot...</div>
         </div>
       </div>
     );
@@ -217,130 +367,176 @@ function GitHubAutopilotContent() {
     return <ConnectGitHubPrompt />;
   }
 
-  const activeRepos = repos.filter(r => r.is_active).length;
-  const drafts = generatedPosts.filter(p => p.status === 'draft').length;
-  const scheduled = generatedPosts.filter(p => p.status === 'scheduled').length;
-  const posted = generatedPosts.filter(p => p.status === 'posted').length;
+  const navItems = [
+    { id: 'overview', label: 'Overview', icon: <BoltIcon className="w-4 h-4" /> },
+    { id: 'repos', label: 'Repositories', icon: <FolderIcon className="w-4 h-4" />, count: repos.filter(r => r.is_active).length },
+    { id: 'commits', label: 'Commits', icon: <DocumentIcon className="w-4 h-4" />, count: commits.length },
+    { id: 'posts', label: 'Generated', icon: <SparklesIcon className="w-4 h-4" />, count: generatedPosts.length },
+    { id: 'settings', label: 'Settings', icon: <CogIcon className="w-4 h-4" /> },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA]">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-lg">
-              <GitHubIcon className="w-5 h-5 text-white" />
-            </div>
-            <div className="hidden sm:block">
-              <h1 className="text-lg font-bold text-gray-900">GitHub Autopilot</h1>
-              <p className="text-xs text-gray-500">Ship code → Ship content</p>
-            </div>
+    <div className="min-h-screen bg-[#F8F9FB] flex">
+      {/* Left Sidebar */}
+      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        {/* Header */}
+        <div className="h-16 px-5 flex items-center gap-3 border-b border-gray-100">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
+            <GitHubIcon className="w-5 h-5 text-white" />
           </div>
-          
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all ${
+          <div>
+            <div className="font-semibold text-gray-900 text-sm">GitHub Autopilot</div>
+            <div className="text-xs text-gray-500">Push code → Ship content</div>
+          </div>
+        </div>
+
+        {/* Status Card */}
+        <div className="mx-4 mt-4 p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-gray-600">Status</span>
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
               settings.autoPost 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                : 'bg-gray-100 text-gray-600 border border-gray-200'
+                ? 'bg-emerald-100 text-emerald-700' 
+                : settings.autoGenerate 
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-gray-200 text-gray-600'
             }`}>
-              <div className={`w-2 h-2 rounded-full ${settings.autoPost ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
-              <span className="hidden sm:inline">{settings.autoPost ? 'Auto-posting ON' : 'Auto-posting OFF'}</span>
-              <span className="sm:hidden">{settings.autoPost ? 'ON' : 'OFF'}</span>
-            </div>
-            
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-full text-xs sm:text-sm font-medium">
-              <GitHubIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">@{connectedAccount.platform_username}</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${
+                settings.autoPost ? 'bg-emerald-500 animate-pulse-soft' : settings.autoGenerate ? 'bg-blue-500' : 'bg-gray-400'
+              }`} />
+              {settings.autoPost ? 'Auto-posting' : settings.autoGenerate ? 'Generating' : 'Paused'}
             </div>
           </div>
-        </div>
-      </header>
-
-      {/* Stats Bar */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between sm:justify-start gap-4 sm:gap-8 overflow-x-auto">
-            <Stat label="Repos" value={activeRepos} icon="📁" />
-            <Stat label="Commits" value={commits.length} icon="📝" />
-            <Stat label="Drafts" value={drafts} icon="✏️" />
-            <Stat label="Scheduled" value={scheduled} icon="📅" />
-            <Stat label="Posted" value={posted} icon="✅" />
+          <div className="flex items-center gap-2">
+            <img 
+              src={connectedAccount.platform_avatar_url || `https://github.com/${connectedAccount.platform_username}.png`}
+              alt={connectedAccount.platform_username}
+              className="w-6 h-6 rounded-full"
+            />
+            <span className="text-sm text-gray-700 font-medium">@{connectedAccount.platform_username}</span>
           </div>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex gap-1 overflow-x-auto">
-            {[
-              { id: 'repos', label: 'Repositories', shortLabel: 'Repos', count: activeRepos },
-              { id: 'commits', label: 'Recent Commits', shortLabel: 'Commits', count: commits.length },
-              { id: 'generated', label: 'Generated Posts', shortLabel: 'Posts', count: generatedPosts.length },
-              { id: 'settings', label: 'Settings', shortLabel: 'Settings' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'border-gray-900 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <span className="hidden sm:inline">{tab.label}</span>
-                <span className="sm:hidden">{tab.shortLabel}</span>
-                {tab.count !== undefined && (
-                  <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-                    activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveSection(item.id);
+                setSelectedCommit(null);
+                setSelectedPost(null);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                activeSection === item.id
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              {item.icon}
+              <span className="flex-1 text-left">{item.label}</span>
+              {item.count !== undefined && (
+                <span className={`px-2 py-0.5 rounded-md text-xs ${
+                  activeSection === item.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {item.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Streak Card */}
+        <div className="mx-4 mb-4 p-4 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200">
+          <div className="flex items-center gap-2 mb-2">
+            <FireIcon className="w-5 h-5 text-amber-500" />
+            <span className="text-sm font-semibold text-amber-800">Shipping Streak</span>
           </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-3xl font-bold text-amber-600">{streak.current}</span>
+            <span className="text-sm text-amber-600">days</span>
+          </div>
+          <div className="text-xs text-amber-600/70 mt-1">Longest: {streak.longest} days</div>
         </div>
-      </div>
+      </aside>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {activeTab === 'repos' && (
-          <ReposTab repos={repos} connectedAccount={connectedAccount} onUpdate={fetchData} toast={toast} />
-        )}
-        {activeTab === 'commits' && (
-          <CommitsTab commits={commits} onUpdate={fetchData} toast={toast} />
-        )}
-        {activeTab === 'generated' && (
-          <GeneratedPostsTab posts={generatedPosts} onUpdate={fetchData} toast={toast} />
-        )}
-        {activeTab === 'settings' && (
-          <SettingsTab settings={settings} onUpdate={async (newSettings) => {
-            setSettings(newSettings);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-            await supabase.from('github_autopilot_settings')
-              .upsert({ user_id: user.id, settings: newSettings, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-            toast.success('Settings saved!');
-          }} toast={toast} />
-        )}
-      </div>
-    </div>
-  );
-}
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col">
+        {/* Top Bar */}
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
+          <h1 className="text-lg font-semibold text-gray-900">
+            {navItems.find(n => n.id === activeSection)?.label || 'Overview'}
+          </h1>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchData}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              title="Refresh"
+            >
+              <RefreshIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </header>
 
-// ==========================================
-// STAT COMPONENT
-// ==========================================
-
-function Stat({ label, value, icon }) {
-  return (
-    <div className="flex items-center gap-2 sm:gap-3">
-      <span className="text-lg sm:text-xl">{icon}</span>
-      <div>
-        <p className="text-xl sm:text-2xl font-bold text-gray-900">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
-      </div>
+        {/* Content Area */}
+        <div className="flex-1 overflow-auto">
+          {activeSection === 'overview' && (
+            <OverviewSection 
+              repos={repos}
+              commits={commits}
+              posts={generatedPosts}
+              streak={streak}
+              settings={settings}
+              onNavigate={setActiveSection}
+            />
+          )}
+          {activeSection === 'repos' && (
+            <ReposSection 
+              repos={repos}
+              connectedAccount={connectedAccount}
+              onUpdate={fetchData}
+              toast={toast}
+            />
+          )}
+          {activeSection === 'commits' && (
+            <CommitsSection 
+              commits={commits}
+              selectedCommit={selectedCommit}
+              onSelectCommit={setSelectedCommit}
+              onUpdate={fetchData}
+              toast={toast}
+            />
+          )}
+          {activeSection === 'posts' && (
+            <PostsSection 
+              posts={generatedPosts}
+              selectedPost={selectedPost}
+              onSelectPost={setSelectedPost}
+              onUpdate={fetchData}
+              toast={toast}
+            />
+          )}
+          {activeSection === 'settings' && (
+            <SettingsSection 
+              settings={settings}
+              onUpdate={async (newSettings) => {
+                setSettings(newSettings);
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                  await supabase
+                    .from('github_autopilot_settings')
+                    .upsert({
+                      user_id: user.id,
+                      settings: newSettings,
+                      updated_at: new Date().toISOString(),
+                    }, { onConflict: 'user_id' });
+                  toast.success('Settings saved!');
+                }
+              }}
+            />
+          )}
+        </div>
+      </main>
     </div>
   );
 }
@@ -352,210 +548,476 @@ function Stat({ label, value, icon }) {
 function ConnectGitHubPrompt() {
   const [isConnecting, setIsConnecting] = useState(false);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur flex items-center justify-center mx-auto mb-6 shadow-2xl border border-white/20">
-            <GitHubIcon className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-3">Ship Code → Ship Content</h1>
-          <p className="text-gray-400 text-base sm:text-lg">
-            Connect GitHub and let AI turn your commits into engaging social posts.
-          </p>
-        </div>
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    window.location.href = '/api/auth/github';
+  };
 
-        <div className="bg-white/5 backdrop-blur rounded-2xl p-5 border border-white/10 mb-6">
-          <div className="space-y-3">
+  return (
+    <div className="min-h-screen bg-[#F8F9FB] flex items-center justify-center p-6">
+      <div className="max-w-md w-full">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="p-8 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center mx-auto mb-6 shadow-lg">
+              <GitHubIcon className="w-10 h-10 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Ship Code → Ship Content</h2>
+            <p className="text-gray-500">Connect GitHub to turn your commits into engaging social posts automatically.</p>
+          </div>
+
+          {/* Features */}
+          <div className="px-8 pb-6 space-y-3">
             {[
-              { icon: '🔗', text: 'Connect your repositories' },
-              { icon: '🤖', text: 'AI generates posts from commits' },
-              { icon: '✨', text: 'Choose variations, edit, or auto-post' },
-              { icon: '🚀', text: 'Never go dark on social media again' },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-3 text-white/80">
-                <span className="text-lg">{item.icon}</span>
-                <span className="text-sm sm:text-base">{item.text}</span>
+              { icon: '⚡', text: 'Auto-generate posts from commits' },
+              { icon: '🎯', text: 'Smart commit filtering' },
+              { icon: '🔥', text: 'Track your shipping streak' },
+              { icon: '✨', text: 'AI-powered content generation' },
+            ].map((feature, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <span className="text-lg">{feature.icon}</span>
+                <span className="text-sm text-gray-700">{feature.text}</span>
               </div>
             ))}
           </div>
-        </div>
 
-        <button
-          onClick={() => { setIsConnecting(true); window.location.href = '/api/auth/github'; }}
-          disabled={isConnecting}
-          className="w-full py-3.5 bg-white text-gray-900 rounded-xl font-semibold text-base hover:bg-gray-100 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-        >
-          <GitHubIcon className="w-5 h-5" />
-          {isConnecting ? 'Connecting...' : 'Connect GitHub'}
-        </button>
+          {/* Connect Button */}
+          <div className="p-6 border-t border-gray-100 bg-gray-50">
+            <button
+              onClick={handleConnect}
+              disabled={isConnecting}
+              className="w-full py-3.5 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 transition-colors flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              {isConnecting ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <GitHubIcon className="w-5 h-5" />
+                  Connect GitHub Account
+                </>
+              )}
+            </button>
+            <p className="text-center text-xs text-gray-500 mt-3">
+              We only request read access to your repositories
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 // ==========================================
-// REPOS TAB
+// OVERVIEW SECTION
 // ==========================================
 
-function ReposTab({ repos, connectedAccount, onUpdate, toast }) {
-  const [showAddModal, setShowAddModal] = useState(false);
+function OverviewSection({ repos, commits, posts, streak, settings, onNavigate }) {
+  const activeRepos = repos.filter(r => r.is_active);
+  const todayCommits = commits.filter(c => {
+    const commitDate = new Date(c.committed_at).toDateString();
+    return commitDate === new Date().toDateString();
+  });
+  const pendingPosts = posts.filter(p => p.status === 'draft');
+  const publishedPosts = posts.filter(p => p.status === 'published');
+
+  const stats = [
+    { label: 'Active Repos', value: activeRepos.length, icon: <FolderIcon className="w-5 h-5" />, color: 'text-blue-600 bg-blue-50' },
+    { label: 'Today\'s Commits', value: todayCommits.length, icon: <BoltIcon className="w-5 h-5" />, color: 'text-purple-600 bg-purple-50' },
+    { label: 'Pending Posts', value: pendingPosts.length, icon: <ClockIcon className="w-5 h-5" />, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Published', value: publishedPosts.length, icon: <CheckCircleIcon className="w-5 h-5" />, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        {stats.map((stat, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className={`w-10 h-10 rounded-xl ${stat.color} flex items-center justify-center mb-3`}>
+              {stat.icon}
+            </div>
+            <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
+            <div className="text-sm text-gray-500">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-3 gap-6">
+        {/* Recent Activity */}
+        <div className="col-span-2 bg-white rounded-xl border border-gray-200">
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Recent Activity</h3>
+            <button 
+              onClick={() => onNavigate('commits')}
+              className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+            >
+              View all <ChevronRightIcon className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {commits.slice(0, 5).map((commit) => (
+              <div key={commit.id} className="p-4 hover:bg-gray-50 transition-colors">
+                <div className="flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    commit.post_generated ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {commit.post_generated ? <CheckCircleIcon className="w-4 h-4" /> : <DocumentIcon className="w-4 h-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{commit.message}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-gray-500">{commit.github_repos?.repo_name}</span>
+                      <span className="text-gray-300">•</span>
+                      <span className="text-xs text-gray-500">{formatTimeAgo(commit.committed_at)}</span>
+                      {commit.post_generated && (
+                        <>
+                          <span className="text-gray-300">•</span>
+                          <span className="text-xs text-emerald-600 font-medium">Post generated</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {commits.length === 0 && (
+              <div className="p-8 text-center text-gray-500">
+                <DocumentIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No commits yet. Push some code!</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="space-y-4">
+          {/* Autopilot Status */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-900 mb-4">Autopilot Status</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Auto-generate</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  settings.autoGenerate ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {settings.autoGenerate ? 'On' : 'Off'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Auto-post</span>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  settings.autoPost ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {settings.autoPost ? 'On' : 'Off'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600">Tone</span>
+                <span className="px-2 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600 capitalize">
+                  {settings.tone}
+                </span>
+              </div>
+            </div>
+            <button 
+              onClick={() => onNavigate('settings')}
+              className="w-full mt-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Configure Settings
+            </button>
+          </div>
+
+          {/* Pending Posts */}
+          {pendingPosts.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-900 mb-3">Ready to Post</h3>
+              <div className="space-y-2">
+                {pendingPosts.slice(0, 3).map((post) => (
+                  <div key={post.id} className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-700 line-clamp-2">{post.content}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-xs text-gray-500">{post.platform}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button 
+                onClick={() => onNavigate('posts')}
+                className="w-full mt-3 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Review Posts
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// REPOS SECTION
+// ==========================================
+
+function ReposSection({ repos, connectedAccount, onUpdate, toast }) {
+  const [showAddRepo, setShowAddRepo] = useState(false);
   const [availableRepos, setAvailableRepos] = useState([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
-  const [addingRepo, setAddingRepo] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const supabase = createClient();
 
   const fetchAvailableRepos = async () => {
     setLoadingRepos(true);
     try {
       const response = await fetch('/api/github/repos');
       const data = await response.json();
-      setAvailableRepos(data.repos || []);
+      if (data.repos) {
+        // Filter out already added repos
+        const addedIds = repos.map(r => r.repo_id);
+        setAvailableRepos(data.repos.filter(r => !addedIds.includes(r.id)));
+      }
     } catch (err) {
-      toast.error('Failed to fetch repos');
+      toast.error('Failed to fetch repositories');
     } finally {
       setLoadingRepos(false);
     }
   };
 
   const handleAddRepo = async (repo) => {
-    setAddingRepo(repo.full_name);
     try {
-      const response = await fetch('/api/github/repos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repoFullName: repo.full_name,
-          repoName: repo.name,
-          repoDescription: repo.description,
-          isPrivate: repo.private,
-        }),
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not logged in');
+
+      await supabase.from('github_repos').insert({
+        user_id: user.id,
+        repo_id: repo.id,
+        repo_name: repo.name,
+        repo_full_name: repo.full_name,
+        repo_url: repo.html_url,
+        is_active: true,
       });
 
-      const data = await response.json();
-      
-      if (data.success) {
-        toast.success(data.message || `${repo.name} connected! 🎉`);
-        setShowAddModal(false);
-        onUpdate();
+      // Setup webhook
+      const webhookResponse = await fetch('/api/github/webhook/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoFullName: repo.full_name }),
+      });
+
+      if (!webhookResponse.ok) {
+        toast.warning(`Added ${repo.name} but webhook setup failed`);
       } else {
-        throw new Error(data.error);
+        toast.success(`Added ${repo.name} with auto-sync!`);
       }
+      
+      setShowAddRepo(false);
+      onUpdate();
     } catch (err) {
       toast.error(err.message);
-    } finally {
-      setAddingRepo(null);
     }
   };
 
-  const filteredRepos = availableRepos.filter(repo => 
-    repo.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    repo.full_name.toLowerCase().includes(searchQuery.toLowerCase())
+  const handleToggleRepo = async (repo) => {
+    try {
+      await supabase
+        .from('github_repos')
+        .update({ is_active: !repo.is_active })
+        .eq('id', repo.id);
+      
+      toast.success(repo.is_active ? `Paused ${repo.repo_name}` : `Activated ${repo.repo_name}`);
+      onUpdate();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleRemoveRepo = async (repo) => {
+    try {
+      await supabase.from('github_repos').delete().eq('id', repo.id);
+      toast.success(`Removed ${repo.repo_name}`);
+      onUpdate();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleSyncCommits = async (repo) => {
+    try {
+      toast.info(`Syncing commits from ${repo.repo_name}...`);
+      
+      const response = await fetch('/api/github/commits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoId: repo.id, repoFullName: repo.repo_full_name }),
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      
+      toast.success(`Synced ${data.fetched} commits!`);
+      onUpdate();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const filteredRepos = repos.filter(r =>
+    r.repo_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.repo_full_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Connected Repositories</h2>
-          <p className="text-gray-500 text-sm mt-1">Repos monitored for commits</p>
+          <p className="text-sm text-gray-500">Manage which repositories to monitor for commits</p>
         </div>
         <button
-          onClick={() => { setShowAddModal(true); fetchAvailableRepos(); }}
-          className="px-4 py-2.5 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+          onClick={() => { setShowAddRepo(true); fetchAvailableRepos(); }}
+          className="px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-800 flex items-center gap-2 transition-colors"
         >
-          <span>+</span> Add Repository
+          <PlusIcon className="w-4 h-4" />
+          Add Repository
         </button>
       </div>
 
-      {repos.length === 0 ? (
-        <div className="text-center py-12 sm:py-16 bg-white rounded-2xl border border-gray-200">
-          <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <GitHubIcon className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No repositories connected</h3>
-          <p className="text-gray-500 mb-6 px-4">Add a repository to start generating posts from commits</p>
-          <button
-            onClick={() => { setShowAddModal(true); fetchAvailableRepos(); }}
-            className="px-5 py-2.5 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-all"
-          >
-            Add your first repo
-          </button>
+      {/* Search */}
+      {repos.length > 0 && (
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Search repositories..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full max-w-xs px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+          />
         </div>
-      ) : (
-        <div className="grid gap-4">
-          {repos.map((repo) => (
-            <RepoCard key={repo.id} repo={repo} onUpdate={onUpdate} toast={toast} />
-          ))}
+      )}
+
+      {/* Repos Grid */}
+      <div className="grid grid-cols-2 gap-4">
+        {filteredRepos.map((repo) => (
+          <div 
+            key={repo.id} 
+            className={`bg-white rounded-xl border p-5 transition-all ${
+              repo.is_active ? 'border-gray-200' : 'border-gray-100 opacity-60'
+            }`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  repo.is_active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
+                }`}>
+                  <FolderIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">{repo.repo_name}</h3>
+                  <p className="text-xs text-gray-500">{repo.repo_full_name}</p>
+                </div>
+              </div>
+              <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                repo.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {repo.is_active ? 'Active' : 'Paused'}
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="flex items-center gap-4 mt-4 text-sm text-gray-500">
+              <span>{repo.commits_count || 0} commits</span>
+              <span>{repo.posts_generated || 0} posts</span>
+              {repo.webhook_id && (
+                <span className="flex items-center gap-1 text-emerald-600">
+                  <CheckCircleIcon className="w-3.5 h-3.5" />
+                  Webhook active
+                </span>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+              <button
+                onClick={() => handleSyncCommits(repo)}
+                className="flex-1 py-2 text-sm font-medium text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
+              >
+                <RefreshIcon className="w-4 h-4" />
+                Sync
+              </button>
+              <button
+                onClick={() => handleToggleRepo(repo)}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  repo.is_active 
+                    ? 'text-amber-600 bg-amber-50 hover:bg-amber-100' 
+                    : 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                }`}
+              >
+                {repo.is_active ? 'Pause' : 'Activate'}
+              </button>
+              <button
+                onClick={() => handleRemoveRepo(repo)}
+                className="p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                <TrashIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {repos.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <FolderIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No repositories connected</h3>
+          <p className="text-gray-500 mb-4">Add your first repository to start generating posts from commits.</p>
+          <button
+            onClick={() => { setShowAddRepo(true); fetchAvailableRepos(); }}
+            className="px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-800 transition-colors"
+          >
+            Add Repository
+          </button>
         </div>
       )}
 
       {/* Add Repo Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-gray-200">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-bold text-gray-900">Add Repository</h3>
-                <button onClick={() => setShowAddModal(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-                  ✕
-                </button>
-              </div>
-              <input
-                type="text"
-                placeholder="Search repositories..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
-              />
+      {showAddRepo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden shadow-xl">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Add Repository</h3>
+              <button onClick={() => setShowAddRepo(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
             </div>
-            
-            <div className="p-4 sm:p-5 overflow-y-auto max-h-[60vh]">
+            <div className="p-4 overflow-auto max-h-[60vh]">
               {loadingRepos ? (
-                <div className="text-center py-8">
-                  <div className="w-8 h-8 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin mx-auto" />
-                  <p className="text-sm text-gray-500 mt-3">Loading your repos...</p>
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
                 </div>
-              ) : filteredRepos.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  {searchQuery ? 'No repos match your search' : 'No repos found'}
+              ) : availableRepos.length === 0 ? (
+                <div className="py-12 text-center text-gray-500">
+                  <FolderIcon className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p>No more repositories to add</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredRepos.map((repo) => (
+                  {availableRepos.map((repo) => (
                     <button
                       key={repo.id}
-                      onClick={() => !repo.connected && handleAddRepo(repo)}
-                      disabled={repo.connected || addingRepo === repo.full_name}
-                      className={`w-full p-3 sm:p-4 rounded-xl border text-left transition-all ${
-                        repo.connected
-                          ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
-                          : addingRepo === repo.full_name
-                          ? 'border-gray-300 bg-gray-50'
-                          : 'border-gray-200 hover:border-gray-400 hover:shadow-sm'
-                      }`}
+                      onClick={() => handleAddRepo(repo)}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors text-left"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                            <GitHubIcon className="w-5 h-5 text-gray-600" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium text-gray-900 truncate">{repo.name}</p>
-                            <p className="text-xs text-gray-500 truncate">{repo.full_name}</p>
-                          </div>
-                        </div>
-                        {repo.connected ? (
-                          <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full whitespace-nowrap">✓ Connected</span>
-                        ) : addingRepo === repo.full_name ? (
-                          <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-                        ) : (
-                          <span className="text-xs text-gray-400 whitespace-nowrap">Click to add →</span>
-                        )}
+                      <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                        <FolderIcon className="w-5 h-5 text-gray-500" />
                       </div>
-                      {repo.description && (
-                        <p className="text-xs text-gray-500 mt-2 line-clamp-1">{repo.description}</p>
-                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900">{repo.name}</div>
+                        <div className="text-sm text-gray-500 truncate">{repo.full_name}</div>
+                      </div>
+                      <PlusIcon className="w-5 h-5 text-gray-400" />
                     </button>
                   ))}
                 </div>
@@ -568,196 +1030,65 @@ function ReposTab({ repos, connectedAccount, onUpdate, toast }) {
   );
 }
 
-function RepoCard({ repo, onUpdate, toast }) {
-  const [isSyncing, setIsSyncing] = useState(false);
-  const supabase = createClient();
-
-  const handleSync = async () => {
-    setIsSyncing(true);
-    toast.info('Syncing commits...');
-    try {
-      const response = await fetch(`/api/github/sync?repoId=${repo.id}`, { method: 'POST' });
-      const data = await response.json();
-      if (data.success) {
-        toast.success(`Synced ${data.newCommits || 0} new commits!`);
-        onUpdate();
-      } else {
-        throw new Error(data.error || 'Sync failed');
-      }
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleToggle = async () => {
-    const { error } = await supabase
-      .from('github_repos')
-      .update({ is_active: !repo.is_active })
-      .eq('id', repo.id);
-    
-    if (!error) {
-      toast.success(repo.is_active ? 'Monitoring paused' : 'Monitoring resumed');
-      onUpdate();
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!confirm('Remove this repository? This will not delete your posts.')) return;
-    
-    try {
-      const response = await fetch('/api/github/repos', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoId: repo.id }),
-      });
-      
-      if (response.ok) {
-        toast.success('Repository removed');
-        onUpdate();
-      }
-    } catch (err) {
-      toast.error('Failed to remove repo');
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 hover:shadow-md transition-all">
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-        <div className="flex items-start gap-3 sm:gap-4">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center shrink-0">
-            <GitHubIcon className="w-6 h-6 text-gray-700" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-gray-900">{repo.repo_name}</h3>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                repo.is_active 
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                  : 'bg-gray-100 text-gray-500 border border-gray-200'
-              }`}>
-                {repo.is_active ? '● Monitoring' : '○ Paused'}
-              </span>
-            </div>
-            <p className="text-sm text-gray-500 truncate">{repo.repo_full_name}</p>
-            
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
-              <span>📝 {repo.commit_count || 0} commits</span>
-              <span>✨ {repo.post_count || 0} posts</span>
-              {repo.webhook_active && (
-                <span className="text-emerald-600">🔗 Webhook active</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 sm:shrink-0">
-          <button
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all disabled:opacity-50"
-          >
-            <RefreshIcon className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Sync</span>
-          </button>
-          <button
-            onClick={handleToggle}
-            className={`px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-              repo.is_active
-                ? 'text-amber-600 hover:bg-amber-50'
-                : 'text-emerald-600 hover:bg-emerald-50'
-            }`}
-          >
-            {repo.is_active ? '⏸ Pause' : '▶ Resume'}
-          </button>
-          <button
-            onClick={handleDelete}
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-          >
-            <TrashIcon className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ==========================================
-// COMMITS TAB - With Side-by-Side Preview
+// COMMITS SECTION
 // ==========================================
 
-function CommitsTab({ commits, onUpdate, toast }) {
-  const [filter, setFilter] = useState('all');
-  const [selectedCommit, setSelectedCommit] = useState(null);
-  const [variations, setVariations] = useState([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [diffData, setDiffData] = useState(null);
-
-  const filteredCommits = filter === 'all' 
-    ? commits 
-    : commits.filter(c => getCommitType(c.message).type === filter);
+function CommitsSection({ commits, selectedCommit, onSelectCommit, onUpdate, toast }) {
+  const [generating, setGenerating] = useState(null);
+  const [generatedContent, setGeneratedContent] = useState(null);
 
   const handleGeneratePost = async (commit) => {
-    setSelectedCommit(commit);
-    setIsGenerating(true);
-    setVariations([]);
-    setDiffData(null);
-
+    setGenerating(commit.id);
     try {
       const response = await fetch('/api/github/generate-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           commitId: commit.id,
-          commitSha: commit.sha,
           commitMessage: commit.message,
-          repoName: commit.github_repos?.repo_name || 'my project',
+          commitSha: commit.sha,
           repoFullName: commit.github_repos?.repo_full_name,
           platform: 'x',
-          generateVariations: true,
           saveToDb: false,
         }),
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
 
-      if (data.variations) {
-        setVariations(data.variations);
-        setDiffData(data.diffSummary);
-        toast.success('Generated 5 variations!');
-      } else if (data.error) {
-        throw new Error(data.error);
-      }
+      setGeneratedContent(data.content);
+      onSelectCommit(commit);
     } catch (err) {
       toast.error(err.message);
-      setSelectedCommit(null);
     } finally {
-      setIsGenerating(false);
+      setGenerating(null);
     }
   };
 
-  const handleSelectVariation = async (variation, customContent = null) => {
+  const handleSavePost = async () => {
+    if (!selectedCommit || !generatedContent) return;
+    
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const content = customContent || variation.content;
-      
-      const { error } = await supabase.from('posts').insert({
-        user_id: user.id,
-        content: content,
-        platform: 'x',
-        status: 'draft',
-        source: 'github',
-        source_commit: selectedCommit?.sha,
+      const response = await fetch('/api/github/generate-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commitId: selectedCommit.id,
+          commitMessage: selectedCommit.message,
+          commitSha: selectedCommit.sha,
+          repoFullName: selectedCommit.github_repos?.repo_full_name,
+          platform: 'x',
+          saveToDb: true,
+        }),
       });
 
-      if (error) throw error;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
 
-      toast.success('Post saved to drafts!');
-      setSelectedCommit(null);
-      setVariations([]);
+      toast.success('Post saved as draft!');
+      setGeneratedContent(null);
+      onSelectCommit(null);
       onUpdate();
     } catch (err) {
       toast.error(err.message);
@@ -765,671 +1096,401 @@ function CommitsTab({ commits, onUpdate, toast }) {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
+    <div className="flex h-full">
       {/* Commits List */}
-      <div className={`${selectedCommit ? 'lg:w-1/2' : 'w-full'} transition-all`}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Recent Commits</h2>
-            <p className="text-gray-500 text-sm mt-1">Click a commit to generate posts</p>
-          </div>
+      <div className={`${selectedCommit ? 'w-1/2 border-r border-gray-200' : 'w-full'} overflow-auto`}>
+        <div className="p-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+          <p className="text-sm text-gray-500">{commits.length} commits from your repositories</p>
         </div>
-
-        {/* Filter Pills */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {['all', 'feature', 'fix', 'launch', 'docs', 'other'].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 sm:px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                filter === f
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
+        <div className="divide-y divide-gray-50">
+          {commits.map((commit) => (
+            <div 
+              key={commit.id}
+              onClick={() => onSelectCommit(commit)}
+              className={`p-4 cursor-pointer transition-colors ${
+                selectedCommit?.id === commit.id ? 'bg-blue-50' : 'hover:bg-gray-50'
               }`}
             >
-              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
+              <div className="flex items-start gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  commit.post_generated ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {commit.post_generated ? <CheckCircleIcon className="w-4 h-4" /> : <DocumentIcon className="w-4 h-4" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 line-clamp-2">{commit.message}</p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{commit.github_repos?.repo_name}</span>
+                    <span className="text-xs text-gray-400">{formatTimeAgo(commit.committed_at)}</span>
+                  </div>
+                </div>
+                {!commit.post_generated && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleGeneratePost(commit); }}
+                    disabled={generating === commit.id}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {generating === commit.id ? (
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <SparklesIcon className="w-3.5 h-3.5" />
+                    )}
+                    Generate
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
-
-        {/* Commits */}
-        {filteredCommits.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
-            <p className="text-gray-500">No commits found</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredCommits.map((commit) => (
-              <CommitCard
-                key={commit.id}
-                commit={commit}
-                isSelected={selectedCommit?.id === commit.id}
-                onClick={() => handleGeneratePost(commit)}
-                isGenerating={isGenerating && selectedCommit?.id === commit.id}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Preview Panel */}
       {selectedCommit && (
-        <div className="lg:w-1/2 lg:sticky lg:top-24 lg:self-start">
-          <PreviewPanel
-            commit={selectedCommit}
-            variations={variations}
-            diffData={diffData}
-            isGenerating={isGenerating}
-            onSelect={handleSelectVariation}
-            onClose={() => { setSelectedCommit(null); setVariations([]); }}
-            toast={toast}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CommitCard({ commit, isSelected, onClick, isGenerating }) {
-  const { type, emoji } = getCommitType(commit.message);
-  const cleanMessage = commit.message.split('\n')[0].replace(/^(feat|fix|docs|refactor|chore|style|test)(\(.+\))?:\s*/i, '');
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={isGenerating}
-      className={`w-full p-4 rounded-xl border text-left transition-all ${
-        isSelected
-          ? 'border-gray-900 bg-gray-50 shadow-md ring-1 ring-gray-900'
-          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span className="text-xl shrink-0">{emoji}</span>
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-gray-900 line-clamp-2">{cleanMessage}</p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-gray-500">
-            <span className="truncate">{commit.github_repos?.repo_name}</span>
-            <span>•</span>
-            <span className="font-mono">{commit.sha?.slice(0, 7)}</span>
-            <span>•</span>
-            <span>{formatDate(commit.committed_at)}</span>
-          </div>
-        </div>
-        
-        <div className="shrink-0">
-          {commit.post_generated ? (
-            <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-full font-medium">✓ Done</span>
-          ) : isGenerating ? (
-            <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-          ) : (
-            <span className="px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded-full font-medium">Generate →</span>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function PreviewPanel({ commit, variations, diffData, isGenerating, onSelect, onClose, toast }) {
-  const [editingIndex, setEditingIndex] = useState(null);
-  const [editedContent, setEditedContent] = useState('');
-
-  const handleSaveEdited = () => {
-    if (editedContent.trim()) {
-      onSelect(null, editedContent);
-    }
-    setEditingIndex(null);
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">✨</span>
-            <h3 className="font-semibold text-gray-900">Generate Post</h3>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <div className="max-h-[70vh] overflow-y-auto">
-        {/* Commit Info */}
-        <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">From commit</p>
-          <div className="bg-white border border-gray-200 rounded-lg p-3">
-            <p className="font-mono text-sm text-gray-800 break-words">
-              {commit.message.split('\n')[0]}
-            </p>
-            <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-              <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{commit.sha?.slice(0, 7)}</span>
-              <span>{commit.github_repos?.repo_name}</span>
+        <div className="w-1/2 bg-gray-50 overflow-auto">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-semibold text-gray-900">Commit → Post Preview</h3>
+              <button onClick={() => { onSelectCommit(null); setGeneratedContent(null); }} className="p-1 text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
             </div>
-          </div>
-          
-          {diffData && (
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-              <span className="px-2 py-1 bg-gray-100 rounded-full">📁 {diffData.totalFiles} files</span>
-              <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full">+{diffData.totalAdditions}</span>
-              <span className="px-2 py-1 bg-red-50 text-red-600 rounded-full">-{diffData.totalDeletions}</span>
-            </div>
-          )}
-        </div>
 
-        {/* Variations */}
-        <div className="p-4">
-          {isGenerating ? (
-            <div className="text-center py-10">
-              <div className="w-10 h-10 border-4 border-gray-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-sm text-gray-600 font-medium">Analyzing code changes...</p>
-              <p className="text-xs text-gray-400 mt-1">Generating 5 variations</p>
+            {/* Commit */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <GitHubIcon className="w-4 h-4 text-gray-600" />
+                <span className="text-xs font-medium text-gray-500">COMMIT</span>
+              </div>
+              <p className="text-sm text-gray-900">{selectedCommit.message}</p>
+              <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
+                <span>{selectedCommit.github_repos?.repo_name}</span>
+                <span>•</span>
+                <span>{selectedCommit.sha?.slice(0, 7)}</span>
+              </div>
             </div>
-          ) : variations.length > 0 ? (
-            <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Choose a variation</p>
-              {variations.map((v, i) => (
-                <div
-                  key={i}
-                  className="p-4 rounded-xl border border-gray-200 hover:border-purple-300 hover:bg-purple-50/30 transition-all group"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{v.label}</span>
-                    <span className={`text-xs ${v.charCount > 280 ? 'text-red-500' : 'text-gray-400'}`}>{v.charCount}/280</span>
+
+            <div className="flex justify-center my-4">
+              <div className="w-0.5 h-8 bg-gray-300" />
+            </div>
+
+            {/* Generated Post */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <SparklesIcon className="w-4 h-4 text-purple-600" />
+                <span className="text-xs font-medium text-gray-500">GENERATED POST</span>
+              </div>
+              {generatedContent ? (
+                <>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{generatedContent}</p>
+                  <div className="flex items-center gap-2 mt-4">
+                    <button
+                      onClick={handleSavePost}
+                      className="flex-1 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors"
+                    >
+                      Save as Draft
+                    </button>
+                    <button
+                      onClick={() => handleGeneratePost(selectedCommit)}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      Regenerate
+                    </button>
                   </div>
-                  
-                  {editingIndex === i ? (
-                    <div>
-                      <textarea
-                        value={editedContent}
-                        onChange={(e) => setEditedContent(e.target.value)}
-                        className="w-full p-3 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
-                        rows={4}
-                        maxLength={280}
-                      />
-                      <div className="flex items-center justify-between mt-2">
-                        <span className={`text-xs ${editedContent.length > 280 ? 'text-red-500' : 'text-gray-400'}`}>
-                          {editedContent.length}/280
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setEditingIndex(null)}
-                            className="px-3 py-1.5 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={handleSaveEdited}
-                            disabled={editedContent.length > 280 || !editedContent.trim()}
-                            className="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50"
-                          >
-                            Save to Drafts
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{v.content}</p>
-                      
-                      <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => onSelect(v)}
-                          className="px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 transition-colors"
-                        >
-                          Use This
-                        </button>
-                        <button
-                          onClick={() => { setEditingIndex(i); setEditedContent(v.content); }}
-                          className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => { navigator.clipboard.writeText(v.content); toast.success('Copied!'); }}
-                          className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                    </>
-                  )}
+                </>
+              ) : selectedCommit.post_generated ? (
+                <p className="text-sm text-gray-500 italic">Post already generated for this commit.</p>
+              ) : (
+                <div className="py-8 text-center">
+                  <SparklesIcon className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Click "Generate" to create a post</p>
                 </div>
-              ))}
+              )}
             </div>
-          ) : (
-            <div className="text-center py-10 text-gray-500">
-              <p className="text-sm">Click a commit to generate post variations</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==========================================
-// GENERATED POSTS TAB
-// ==========================================
-
-function GeneratedPostsTab({ posts, onUpdate, toast }) {
-  const [filter, setFilter] = useState('all');
-  
-  const filteredPosts = filter === 'all' 
-    ? posts 
-    : posts.filter(p => p.status === filter);
-
-  const statusCounts = {
-    all: posts.length,
-    draft: posts.filter(p => p.status === 'draft').length,
-    scheduled: posts.filter(p => p.status === 'scheduled').length,
-    posted: posts.filter(p => p.status === 'posted').length,
-  };
-
-  return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Generated Posts</h2>
-          <p className="text-gray-500 text-sm mt-1">AI-generated content from your commits</p>
-        </div>
-        
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-amber-600 font-medium">✏️ {statusCounts.draft}</span>
-          <span className="text-indigo-600 font-medium">📅 {statusCounts.scheduled}</span>
-          <span className="text-emerald-600 font-medium">✅ {statusCounts.posted}</span>
-        </div>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {['all', 'draft', 'scheduled', 'posted'].map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 sm:px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              filter === f
-                ? 'bg-gray-900 text-white'
-                : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-            <span className="ml-1.5 opacity-70">{statusCounts[f]}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Posts Grid */}
-      {filteredPosts.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
-          <p className="text-gray-500">No posts found</p>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {filteredPosts.map((post) => (
-            <PostCard key={post.id} post={post} onUpdate={onUpdate} toast={toast} />
-          ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function PostCard({ post, onUpdate, toast }) {
-  const [isPosting, setIsPosting] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedContent, setEditedContent] = useState(post.content);
+// ==========================================
+// POSTS SECTION
+// ==========================================
+
+function PostsSection({ posts, selectedPost, onSelectPost, onUpdate, toast }) {
+  const [posting, setPosting] = useState(null);
   const supabase = createClient();
 
-  const handlePostNow = async () => {
-    setIsPosting(true);
+  const handlePublish = async (post) => {
+    setPosting(post.id);
     try {
-      const response = await fetch('/api/posts/x/publish', {
+      const response = await fetch('/api/x/post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: post.content, postId: post.id }),
       });
 
       const data = await response.json();
-      if (data.success) {
-        toast.success('Posted to X! 🎉');
-        onUpdate();
-      } else {
-        throw new Error(data.error);
-      }
+      if (!response.ok) throw new Error(data.error);
+
+      toast.success('Posted to X!');
+      onUpdate();
     } catch (err) {
       toast.error(err.message);
     } finally {
-      setIsPosting(false);
+      setPosting(null);
     }
   };
 
-  const handleSaveEdit = async () => {
-    const { error } = await supabase
-      .from('posts')
-      .update({ content: editedContent })
-      .eq('id', post.id);
-    
-    if (!error) {
-      toast.success('Post updated!');
-      setIsEditing(false);
-      onUpdate();
-    } else {
-      toast.error('Failed to update');
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!confirm('Delete this post?')) return;
-    
-    const { error } = await supabase
-      .from('posts')
-      .delete()
-      .eq('id', post.id);
-    
-    if (!error) {
+  const handleDelete = async (post) => {
+    try {
+      await supabase.from('posts').delete().eq('id', post.id);
       toast.success('Post deleted');
+      onSelectPost(null);
       onUpdate();
+    } catch (err) {
+      toast.error(err.message);
     }
   };
 
-  const statusConfig = {
-    draft: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', label: '✏️ Draft' },
-    scheduled: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', label: '📅 Scheduled' },
-    posted: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', label: '✅ Posted' },
-    failed: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', label: '❌ Failed' },
+  const statusColors = {
+    draft: 'bg-amber-100 text-amber-700',
+    scheduled: 'bg-blue-100 text-blue-700',
+    published: 'bg-emerald-100 text-emerald-700',
+    failed: 'bg-red-100 text-red-700',
   };
-
-  const status = statusConfig[post.status] || statusConfig.draft;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 hover:shadow-md transition-all">
-      <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center shrink-0">
-          <XIcon className="w-5 h-5 text-white" />
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${status.bg} ${status.text} border ${status.border}`}>
-              {status.label}
-            </span>
-            {post.source_commit && (
-              <span className="text-xs text-gray-400 font-mono">
-                from {post.source_commit.slice(0, 7)}
-              </span>
-            )}
+    <div className="flex h-full">
+      {/* Posts List */}
+      <div className={`${selectedPost ? 'w-1/2 border-r border-gray-200' : 'w-full'} overflow-auto`}>
+        <div className="p-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-500">{posts.filter(p => p.status === 'draft').length} drafts</span>
+            <span className="text-sm text-gray-500">{posts.filter(p => p.status === 'published').length} published</span>
           </div>
-          
-          {isEditing ? (
-            <div>
-              <textarea
-                value={editedContent}
-                onChange={(e) => setEditedContent(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-                rows={4}
-                maxLength={280}
-              />
-              <div className="flex items-center justify-between mt-2">
-                <span className={`text-xs ${editedContent.length > 280 ? 'text-red-500' : 'text-gray-400'}`}>
-                  {editedContent.length}/280
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-100">
-                    Cancel
-                  </button>
-                  <button onClick={handleSaveEdit} className="px-3 py-1.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800">
-                    Save
-                  </button>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {posts.map((post) => (
+            <div 
+              key={post.id}
+              onClick={() => onSelectPost(post)}
+              className={`p-4 cursor-pointer transition-colors ${
+                selectedPost?.id === post.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-900 line-clamp-2">{post.content}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[post.status] || statusColors.draft}`}>
+                      {post.status}
+                    </span>
+                    <span className="text-xs text-gray-400">{formatTimeAgo(post.created_at)}</span>
+                  </div>
                 </div>
+                {post.status === 'draft' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handlePublish(post); }}
+                    disabled={posting === post.id}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {posting === post.id ? (
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <PaperAirplaneIcon className="w-3.5 h-3.5" />
+                    )}
+                    Post
+                  </button>
+                )}
               </div>
             </div>
-          ) : (
-            <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{post.content}</p>
-          )}
-          
-          <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-gray-500">
-            <span>{post.content.length}/280 chars</span>
-            <span>•</span>
-            <span>{formatDate(post.created_at)}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Post Detail Panel */}
+      {selectedPost && (
+        <div className="w-1/2 bg-gray-50 overflow-auto">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-semibold text-gray-900">Post Details</h3>
+              <button onClick={() => onSelectPost(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[selectedPost.status]}`}>
+                  {selectedPost.status}
+                </span>
+                <span className="text-xs text-gray-500">{selectedPost.platform}</span>
+              </div>
+              <p className="text-sm text-gray-900 whitespace-pre-wrap">{selectedPost.content}</p>
+              <div className="text-xs text-gray-500 mt-3">
+                Created {new Date(selectedPost.created_at).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {selectedPost.status === 'draft' && (
+                <button
+                  onClick={() => handlePublish(selectedPost)}
+                  disabled={posting === selectedPost.id}
+                  className="flex-1 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {posting === selectedPost.id ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <PaperAirplaneIcon className="w-4 h-4" />
+                  )}
+                  Publish Now
+                </button>
+              )}
+              <button
+                onClick={() => handleDelete(selectedPost)}
+                className="px-4 py-2.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
-
-        {!isEditing && (
-          <div className="flex sm:flex-col gap-2 shrink-0">
-            {post.status === 'draft' && (
-              <>
-                <button
-                  onClick={handlePostNow}
-                  disabled={isPosting}
-                  className="flex-1 sm:flex-none px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isPosting ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>🚀 Post</>
-                  )}
-                </button>
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="px-3 py-2 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-100 transition-all"
-                >
-                  Edit
-                </button>
-              </>
-            )}
-            
-            {post.status === 'posted' && post.external_url && (
-              <a
-                href={post.external_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-2 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-100 transition-all"
-              >
-                View <ExternalLinkIcon className="w-3.5 h-3.5" />
-              </a>
-            )}
-            
-            <button
-              onClick={handleDelete}
-              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-            >
-              <TrashIcon className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
 // ==========================================
-// SETTINGS TAB
+// SETTINGS SECTION
 // ==========================================
 
-function SettingsTab({ settings, onUpdate, toast }) {
+function SettingsSection({ settings, onUpdate }) {
   const [localSettings, setLocalSettings] = useState(settings);
-  const [hasChanges, setHasChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    setLocalSettings(settings);
-  }, [settings]);
-
-  const handleChange = (newSettings) => {
-    setLocalSettings(newSettings);
-    setHasChanges(true);
+  const handleSave = async () => {
+    setIsSaving(true);
+    await onUpdate(localSettings);
+    setIsSaving(false);
   };
 
-  const handleSave = () => {
-    onUpdate(localSettings);
-    setHasChanges(false);
-  };
+  const toneOptions = [
+    { id: 'casual', label: 'Casual', desc: 'Friendly and conversational' },
+    { id: 'professional', label: 'Professional', desc: 'Business-appropriate' },
+    { id: 'funny', label: 'Funny', desc: 'Witty, self-deprecating' },
+    { id: 'hype', label: 'Hype', desc: 'Energetic, excited' },
+  ];
+
+  const filterOptions = [
+    { id: 'feat', label: 'Features', desc: 'feat: commits' },
+    { id: 'fix', label: 'Bug Fixes', desc: 'fix: commits' },
+    { id: 'launch', label: 'Launches', desc: 'launch/ship/release' },
+    { id: 'docs', label: 'Documentation', desc: 'docs: commits' },
+    { id: 'refactor', label: 'Refactors', desc: 'refactor: commits' },
+  ];
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Autopilot Settings</h2>
-          <p className="text-gray-500 text-sm mt-1">Configure how posts are generated</p>
-        </div>
-        {hasChanges && (
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-all text-sm"
-          >
-            Save Changes
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-4">
+    <div className="p-6 max-w-2xl">
+      <div className="space-y-6">
         {/* Auto Generate */}
-        <SettingsCard
-          title="Auto-generate posts"
-          description="Automatically create posts when commits are pushed"
-          enabled={localSettings.autoGenerate}
-          onChange={() => handleChange({ ...localSettings, autoGenerate: !localSettings.autoGenerate })}
-        />
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Auto-generate posts</h3>
+              <p className="text-sm text-gray-500 mt-1">Automatically create posts when commits are pushed</p>
+            </div>
+            <button
+              onClick={() => setLocalSettings({ ...localSettings, autoGenerate: !localSettings.autoGenerate })}
+              className={`w-12 h-7 rounded-full transition-colors ${localSettings.autoGenerate ? 'bg-emerald-500' : 'bg-gray-300'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${localSettings.autoGenerate ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        </div>
 
         {/* Auto Post */}
-        <SettingsCard
-          title="Auto-post (hands-free mode)"
-          description="Automatically publish posts without review"
-          warning="⚠️ Posts will go live immediately. Use with caution."
-          enabled={localSettings.autoPost}
-          onChange={() => handleChange({ ...localSettings, autoPost: !localSettings.autoPost })}
-        />
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Auto-post (hands-free mode)</h3>
+              <p className="text-sm text-gray-500 mt-1">Automatically publish posts without review</p>
+              {localSettings.autoPost && (
+                <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                  <span>⚠️</span> Posts will go live immediately
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setLocalSettings({ ...localSettings, autoPost: !localSettings.autoPost })}
+              className={`w-12 h-7 rounded-full transition-colors ${localSettings.autoPost ? 'bg-amber-500' : 'bg-gray-300'}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${localSettings.autoPost ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        </div>
 
-        {/* Target Platforms */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-900 mb-1">Target platforms</h3>
-          <p className="text-sm text-gray-500 mb-4">Which platforms should posts be generated for?</p>
-          
-          <div className="flex flex-wrap gap-3">
-            {[
-              { id: 'x', label: 'X / Twitter', icon: <XIcon className="w-4 h-4" /> },
-              { id: 'linkedin', label: 'LinkedIn', icon: <LinkedInIcon className="w-4 h-4" /> },
-            ].map((platform) => (
+        {/* Tone Selection */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="font-semibold text-gray-900 mb-4">Content Tone</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {toneOptions.map((tone) => (
               <button
-                key={platform.id}
-                onClick={() => {
-                  const platforms = localSettings.platforms.includes(platform.id)
-                    ? localSettings.platforms.filter(p => p !== platform.id)
-                    : [...localSettings.platforms, platform.id];
-                  handleChange({ ...localSettings, platforms });
-                }}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all ${
-                  localSettings.platforms.includes(platform.id)
-                    ? 'border-gray-900 bg-gray-900 text-white'
-                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                key={tone.id}
+                onClick={() => setLocalSettings({ ...localSettings, tone: tone.id })}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  localSettings.tone === tone.id
+                    ? 'border-gray-900 bg-gray-50'
+                    : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                {platform.icon}
-                {platform.label}
-                {localSettings.platforms.includes(platform.id) && <CheckIcon className="w-4 h-4" />}
+                <div className="font-medium text-sm text-gray-900">{tone.label}</div>
+                <div className="text-xs text-gray-500">{tone.desc}</div>
               </button>
             ))}
           </div>
         </div>
 
         {/* Commit Filters */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-900 mb-1">Commit filters</h3>
-          <p className="text-sm text-gray-500 mb-4">Which types of commits should generate posts?</p>
-          
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { id: 'feat', label: 'Features', desc: 'feat: commits' },
-              { id: 'fix', label: 'Bug Fixes', desc: 'fix: commits' },
-              { id: 'launch', label: 'Launches', desc: 'ship/launch/release' },
-              { id: 'docs', label: 'Documentation', desc: 'docs: commits' },
-              { id: 'refactor', label: 'Refactors', desc: 'refactor: commits' },
-              { id: 'all', label: 'All Commits', desc: 'Every commit' },
-            ].map((filter) => (
-              <button
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="font-semibold text-gray-900 mb-4">Commit Filters</h3>
+          <p className="text-sm text-gray-500 mb-4">Only generate posts for these commit types</p>
+          <div className="space-y-2">
+            {filterOptions.map((filter) => (
+              <label
                 key={filter.id}
-                onClick={() => {
-                  const filters = localSettings.commitFilters.includes(filter.id)
-                    ? localSettings.commitFilters.filter(f => f !== filter.id)
-                    : [...localSettings.commitFilters, filter.id];
-                  handleChange({ ...localSettings, commitFilters: filters });
-                }}
-                className={`p-3 sm:p-4 rounded-xl border text-left transition-all ${
-                  localSettings.commitFilters.includes(filter.id)
-                    ? 'border-gray-900 bg-gray-900 text-white'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className="flex items-center justify-between p-3 rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
               >
-                <p className="font-medium text-sm">{filter.label}</p>
-                <p className={`text-xs mt-0.5 ${localSettings.commitFilters.includes(filter.id) ? 'text-gray-300' : 'text-gray-500'}`}>
-                  {filter.desc}
-                </p>
-              </button>
+                <div>
+                  <div className="font-medium text-sm text-gray-900">{filter.label}</div>
+                  <div className="text-xs text-gray-500">{filter.desc}</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={localSettings.commitFilters?.includes(filter.id)}
+                  onChange={(e) => {
+                    const filters = localSettings.commitFilters || [];
+                    if (e.target.checked) {
+                      setLocalSettings({ ...localSettings, commitFilters: [...filters, filter.id] });
+                    } else {
+                      setLocalSettings({ ...localSettings, commitFilters: filters.filter(f => f !== filter.id) });
+                    }
+                  }}
+                  className="w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+                />
+              </label>
             ))}
           </div>
         </div>
 
-        {/* Tone */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <h3 className="font-semibold text-gray-900 mb-1">Tone</h3>
-          <p className="text-sm text-gray-500 mb-4">How should your posts sound?</p>
-          
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { id: 'casual', label: '😊 Casual', desc: 'Friendly, conversational' },
-              { id: 'professional', label: '💼 Professional', desc: 'Business-appropriate' },
-              { id: 'hype', label: '🔥 Hype', desc: 'Energetic, excited' },
-              { id: 'funny', label: '😄 Funny', desc: 'Witty, self-deprecating' },
-            ].map((tone) => (
-              <button
-                key={tone.id}
-                onClick={() => handleChange({ ...localSettings, tone: tone.id })}
-                className={`p-3 sm:p-4 rounded-xl border text-left transition-all ${
-                  localSettings.tone === tone.id
-                    ? 'border-gray-900 bg-gray-900 text-white'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <p className="font-medium text-sm">{tone.label}</p>
-                <p className={`text-xs mt-0.5 ${localSettings.tone === tone.id ? 'text-gray-300' : 'text-gray-500'}`}>
-                  {tone.desc}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Save Button (Mobile) */}
-        {hasChanges && (
-          <button
-            onClick={handleSave}
-            className="w-full py-3 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-all sm:hidden"
-          >
-            Save Settings
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SettingsCard({ title, description, warning, enabled, onChange }) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="font-semibold text-gray-900">{title}</h3>
-          <p className="text-sm text-gray-500 mt-1">{description}</p>
-          {warning && <p className="text-xs text-amber-600 mt-2">{warning}</p>}
-        </div>
+        {/* Save Button */}
         <button
-          onClick={onChange}
-          className={`w-12 h-7 rounded-full transition-all shrink-0 ${enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+          onClick={handleSave}
+          disabled={isSaving}
+          className="w-full py-3 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
         >
-          <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+          {isSaving ? 'Saving...' : 'Save Settings'}
         </button>
       </div>
     </div>
@@ -1437,29 +1498,15 @@ function SettingsCard({ title, description, warning, enabled, onChange }) {
 }
 
 // ==========================================
-// HELPER FUNCTIONS
+// UTILITY FUNCTIONS
 // ==========================================
+function formatTimeAgo(date) {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
 
-function getCommitType(message) {
-  const lower = (message || '').toLowerCase();
-  if (/^feat/i.test(lower)) return { type: 'feature', emoji: '✨' };
-  if (/^fix/i.test(lower)) return { type: 'fix', emoji: '🐛' };
-  if (/^docs/i.test(lower)) return { type: 'docs', emoji: '📚' };
-  if (/^refactor/i.test(lower)) return { type: 'refactor', emoji: '🔧' };
-  if (/\b(launch|ship|release|deploy)\b/i.test(lower)) return { type: 'launch', emoji: '🚀' };
-  return { type: 'other', emoji: '📝' };
-}
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
 
-function formatDate(dateString) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now - date;
-  
-  if (diff < 60000) return 'just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-  
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(date).toLocaleDateString();
 }
