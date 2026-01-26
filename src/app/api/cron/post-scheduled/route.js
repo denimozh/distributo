@@ -1,4 +1,5 @@
 // src/app/api/cron/post-scheduled/route.js
+// UPDATED: Now supports threaded posting (Hook + Plug pattern) for algorithm optimization
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
@@ -7,6 +8,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Delay between hook and plug (in milliseconds)
+// 60 seconds is optimal - gives time for initial engagement before adding link
+const PLUG_DELAY_MS = 60 * 1000;
 
 export async function GET(request) {
   const startTime = Date.now();
@@ -63,7 +68,12 @@ export async function GET(request) {
     const results = [];
 
     for (const post of posts) {
-      const postResult = { id: post.id, platform: post.platform, status: 'pending' };
+      const postResult = { 
+        id: post.id, 
+        platform: post.platform, 
+        status: 'pending',
+        is_thread: post.is_thread || post.has_plug || false,
+      };
       
       try {
         if (post.platform === 'x') {
@@ -124,9 +134,9 @@ export async function GET(request) {
   }
 }
 
-// ==========================================
-// X (TWITTER) POSTING
-// ==========================================
+// ============================================================================
+// X (TWITTER) POSTING - WITH THREADING SUPPORT
+// ============================================================================
 
 async function processXPost(post, postResult) {
   // Get the connected account for this user
@@ -147,16 +157,181 @@ async function processXPost(post, postResult) {
   // Get valid access token (refreshes if needed)
   const accessToken = await getValidXAccessToken(account);
 
-  // Post to X
+  // Determine if this is a threaded post (hook + plug pattern)
+  const isThread = post.is_thread || post.has_plug || (post.hook_content && post.plug_content);
+  
+  if (isThread) {
+    console.log(`[CRON] 🧵 Posting as THREAD (Hook + Plug pattern for algorithm optimization)`);
+    await postXThread(post, account, accessToken, postResult);
+  } else {
+    console.log(`[CRON] Posting single tweet`);
+    await postSingleXTweet(post, account, accessToken, postResult);
+  }
+}
+
+// ============================================================================
+// POST X THREAD (Hook → 60s delay → Plug as reply)
+// This is the key algorithm optimization!
+// ============================================================================
+
+async function postXThread(post, account, accessToken, postResult) {
+  // Use hook_content if available, otherwise fall back to content
+  const hookContent = post.hook_content || post.content;
+  const plugContent = post.plug_content;
+
+  if (!hookContent) {
+    throw new Error('No hook content available for thread');
+  }
+
+  // ========================================
+  // STEP 1: Post the HOOK (no link, max engagement)
+  // ========================================
+  console.log(`[CRON] 🪝 Posting HOOK: "${hookContent.substring(0, 50)}..."`);
+  
+  const hookPayload = { text: hookContent };
+  
+  // Add community if specified
+  if (post.community_id) {
+    // Look up the community's X ID
+    const { data: community } = await supabase
+      .from('x_communities')
+      .select('community_id')
+      .eq('id', post.community_id)
+      .single();
+    
+    if (community?.community_id) {
+      hookPayload.community_id = community.community_id;
+      hookPayload.share_with_followers = false; // Community-only by default
+    }
+  }
+
+  const hookResponse = await fetch('https://api.twitter.com/2/tweets', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(hookPayload)
+  });
+
+  const hookResponseText = await hookResponse.text();
+  let hookData;
+  
+  try {
+    hookData = JSON.parse(hookResponseText);
+  } catch {
+    console.error('[CRON] Invalid JSON response:', hookResponseText);
+    throw new Error('Invalid response from X API');
+  }
+
+  if (!hookResponse.ok) {
+    console.error('[CRON] X API error on HOOK:', hookData);
+    throw new Error(hookData.detail || hookData.title || hookData.errors?.[0]?.message || 'Failed to post hook tweet');
+  }
+
+  const hookTweetId = hookData.data?.id;
+  console.log(`[CRON] ✅ HOOK posted! ID: ${hookTweetId}`);
+
+  // Store hook tweet info
+  postResult.hook_tweet_id = hookTweetId;
+
+  // ========================================
+  // STEP 2: Wait 60 seconds (let hook get initial engagement)
+  // ========================================
+  if (plugContent) {
+    console.log(`[CRON] ⏳ Waiting ${PLUG_DELAY_MS / 1000}s before posting PLUG...`);
+    await new Promise(resolve => setTimeout(resolve, PLUG_DELAY_MS));
+
+    // ========================================
+    // STEP 3: Post the PLUG as a reply (with link)
+    // ========================================
+    console.log(`[CRON] 🔗 Posting PLUG as reply: "${plugContent.substring(0, 50)}..."`);
+
+    const plugPayload = {
+      text: plugContent,
+      reply: {
+        in_reply_to_tweet_id: hookTweetId,
+      },
+    };
+
+    const plugResponse = await fetch('https://api.twitter.com/2/tweets', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(plugPayload)
+    });
+
+    const plugResponseText = await plugResponse.text();
+    let plugData;
+    
+    try {
+      plugData = JSON.parse(plugResponseText);
+    } catch {
+      console.error('[CRON] Invalid JSON response for plug:', plugResponseText);
+      // Don't throw - hook already posted, just log the error
+    }
+
+    if (plugResponse.ok && plugData?.data?.id) {
+      const plugTweetId = plugData.data.id;
+      console.log(`[CRON] ✅ PLUG posted! ID: ${plugTweetId}`);
+      postResult.plug_tweet_id = plugTweetId;
+    } else {
+      console.error('[CRON] ⚠️ PLUG failed but HOOK succeeded:', plugData);
+      // Don't throw - hook was successful
+    }
+  }
+
+  // ========================================
+  // STEP 4: Update post status in database
+  // ========================================
+  await supabase
+    .from('posts')
+    .update({
+      status: 'posted',
+      posted_at: new Date().toISOString(),
+      external_id: hookTweetId, // Store hook as primary
+      external_url: `https://x.com/${account.platform_username}/status/${hookTweetId}`,
+      plug_tweet_id: postResult.plug_tweet_id || null,
+      error_message: null,
+    })
+    .eq('id', post.id);
+
+  postResult.tweet_id = hookTweetId;
+  console.log(`[CRON] 🎉 Thread complete! Hook: ${hookTweetId}, Plug: ${postResult.plug_tweet_id || 'N/A'}`);
+}
+
+// ============================================================================
+// POST SINGLE TWEET (legacy, non-threaded)
+// ============================================================================
+
+async function postSingleXTweet(post, account, accessToken, postResult) {
   console.log(`[CRON] Posting tweet: "${post.content.substring(0, 50)}..."`);
   
+  const payload = { text: post.content };
+  
+  // Add community if specified
+  if (post.community_id) {
+    const { data: community } = await supabase
+      .from('x_communities')
+      .select('community_id')
+      .eq('id', post.community_id)
+      .single();
+    
+    if (community?.community_id) {
+      payload.community_id = community.community_id;
+      payload.share_with_followers = false;
+    }
+  }
+
   const tweetResponse = await fetch('https://api.twitter.com/2/tweets', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text: post.content })
+    body: JSON.stringify(payload)
   });
 
   const responseText = await tweetResponse.text();
@@ -191,6 +366,10 @@ async function processXPost(post, postResult) {
 
   postResult.tweet_id = tweetId;
 }
+
+// ============================================================================
+// X TOKEN REFRESH
+// ============================================================================
 
 async function getValidXAccessToken(account) {
   // Check if token is expired
@@ -246,9 +425,9 @@ async function getValidXAccessToken(account) {
   return tokens.access_token;
 }
 
-// ==========================================
+// ============================================================================
 // LINKEDIN POSTING
-// ==========================================
+// ============================================================================
 
 async function processLinkedInPost(post, postResult) {
   // Get the connected LinkedIn account
@@ -269,8 +448,13 @@ async function processLinkedInPost(post, postResult) {
   // Get valid access token (refreshes if needed)
   const accessToken = await getValidLinkedInAccessToken(account);
 
-  // Post to LinkedIn using UGC API
-  console.log(`[CRON] Posting to LinkedIn: "${post.content.substring(0, 50)}..."`);
+  // For LinkedIn, we combine hook + plug into one post (no threading API)
+  let content = post.content;
+  if (post.hook_content && post.plug_content) {
+    content = `${post.hook_content}\n\n${post.plug_content}`;
+  }
+
+  console.log(`[CRON] Posting to LinkedIn: "${content.substring(0, 50)}..."`);
   
   const postBody = {
     author: `urn:li:person:${account.platform_user_id}`,
@@ -278,7 +462,7 @@ async function processLinkedInPost(post, postResult) {
     specificContent: {
       'com.linkedin.ugc.ShareContent': {
         shareCommentary: {
-          text: post.content,
+          text: content,
         },
         shareMediaCategory: 'NONE',
       },
@@ -330,6 +514,10 @@ async function processLinkedInPost(post, postResult) {
 
   postResult.linkedin_post_id = linkedinPostId;
 }
+
+// ============================================================================
+// LINKEDIN TOKEN REFRESH
+// ============================================================================
 
 async function getValidLinkedInAccessToken(account) {
   // Check if token is expired

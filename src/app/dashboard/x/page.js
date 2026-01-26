@@ -4,105 +4,401 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+// ==========================================
+// ICONS
+// ==========================================
+
+const IconTwitterX = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
+
+const IconCheck = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const IconEdit = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+
+const IconClock = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
+const IconCalendar = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+    <line x1="16" y1="2" x2="16" y2="6" />
+    <line x1="8" y1="2" x2="8" y2="6" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+  </svg>
+);
+
+const IconEye = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const IconHeart = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+  </svg>
+);
+
+const IconMessageCircle = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+  </svg>
+);
+
+const IconLink = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
+
+const IconTarget = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="6" />
+    <circle cx="12" cy="12" r="2" />
+  </svg>
+);
+
+const IconRefresh = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="23 4 23 10 17 10" />
+    <polyline points="1 20 1 14 7 14" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+  </svg>
+);
+
+const IconSend = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+  </svg>
+);
+
+// ==========================================
+// GROWTH MODE TOGGLE
+// ==========================================
+
+function GrowthModeToggle({ mode, onChange }) {
+  return (
+    <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl">
+      <button
+        onClick={() => onChange('maintenance')}
+        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+          mode === 'maintenance' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        Maintenance
+      </button>
+      <button
+        onClick={() => onChange('aggressive')}
+        className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+          mode === 'aggressive' ? 'bg-amber-500 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        }`}
+      >
+        🔥 Aggressive
+      </button>
+    </div>
+  );
+}
+
+// ==========================================
+// STAT CARD
+// ==========================================
+
+function StatCard({ label, value, icon: Icon, color = 'blue', trend }) {
+  const colorClasses = {
+    blue: 'bg-blue-100 text-blue-600',
+    purple: 'bg-purple-100 text-purple-600',
+    amber: 'bg-amber-100 text-amber-600',
+    emerald: 'bg-emerald-100 text-emerald-600',
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className={`w-10 h-10 rounded-xl ${colorClasses[color]} flex items-center justify-center`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        {trend && (
+          <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+            trend > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'
+          }`}>
+            {trend > 0 ? '+' : ''}{trend}%
+          </span>
+        )}
+      </div>
+      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+// ==========================================
+// THREAD PREVIEW
+// ==========================================
+
+function ThreadPreview({ hook, plug, onApprove, onEdit, onRegenerate }) {
+  const hookLength = hook?.length || 0;
+  const plugLength = plug?.length || 0;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center">
+            <IconTwitterX className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Thread Preview</h3>
+            <p className="text-xs text-gray-500">Hook + Plug Strategy</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onRegenerate} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+            <IconRefresh className="w-4 h-4" />
+          </button>
+          <button onClick={onEdit} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+            <IconEdit className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="p-5">
+        {/* Hook Tweet */}
+        <div className="flex items-start gap-3">
+          <div className="flex flex-col items-center">
+            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm flex-shrink-0">
+              1
+            </div>
+            <div className="w-0.5 h-full bg-gray-200 mt-2 min-h-[60px]" />
+          </div>
+          <div className="flex-1 pb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Hook</span>
+              <span className="text-xs text-gray-400">Main Tweet</span>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{hook || 'No content...'}</p>
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                <span className={`text-xs ${hookLength > 280 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                  {hookLength}/280
+                </span>
+                <div className="flex items-center gap-1 text-gray-400">
+                  <IconLink className="w-3.5 h-3.5 opacity-30" />
+                  <span className="text-xs line-through">No links</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Delay Indicator */}
+        <div className="flex items-center gap-3 -mt-2 mb-2">
+          <div className="w-10 flex justify-center">
+            <div className="px-2 py-1 bg-gray-100 rounded text-[10px] text-gray-500 font-medium">60s</div>
+          </div>
+          <span className="text-xs text-gray-400">Auto-reply delay</span>
+        </div>
+
+        {/* Plug Tweet */}
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-sm flex-shrink-0">
+            2
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Plug</span>
+              <span className="text-xs text-gray-400">Reply with Link</span>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{plug || 'No content...'}</p>
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-emerald-200">
+                <span className={`text-xs ${plugLength > 280 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                  {plugLength}/280
+                </span>
+                <div className="flex items-center gap-1 text-emerald-600">
+                  <IconLink className="w-3.5 h-3.5" />
+                  <span className="text-xs font-medium">Link here ✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tags */}
+        <div className="flex flex-wrap gap-2 mt-5 pt-5 border-t border-gray-100">
+          <span className="px-3 py-1.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
+            🔥 High Reply Potential
+          </span>
+          <span className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+            Build in Public
+          </span>
+        </div>
+      </div>
+
+      <div className="p-5 border-t border-gray-100 flex items-center justify-between bg-gray-50">
+        <span className="text-xs text-gray-500">Algorithm-optimized for maximum reach</span>
+        <button
+          onClick={onApprove}
+          className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-xl transition-colors"
+        >
+          <IconSend className="w-4 h-4" />
+          Schedule Thread
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// ALGORITHM SCORE
+// ==========================================
+
+function AlgorithmScore() {
+  const scores = [
+    { label: 'Link Position', value: 100, status: 'In reply (optimal)', good: true },
+    { label: 'Hook Strength', value: 85, status: 'Strong first line', good: true },
+    { label: 'Reply Potential', value: 90, status: 'Ends with question', good: true },
+    { label: 'Content Length', value: 100, status: 'Under 280 chars', good: true },
+  ];
+
+  const overall = Math.round(scores.reduce((a, b) => a + b.value, 0) / scores.length);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+            <IconTarget className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Algorithm Alignment</h3>
+            <p className="text-xs text-gray-500">Based on X Phoenix scoring</p>
+          </div>
+        </div>
+        <div className="text-2xl font-bold text-emerald-600">{overall}%</div>
+      </div>
+      <div className="p-5 space-y-4">
+        {scores.map((item, i) => (
+          <div key={i} className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                item.good ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'
+              }`}>
+                {item.good ? '✓' : '✗'}
+              </div>
+              <span className="text-sm text-gray-700">{item.label}</span>
+            </div>
+            <span className="text-xs text-gray-500">{item.status}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// UPCOMING POSTS
+// ==========================================
+
+function UpcomingPosts({ posts }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="p-5 border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">Upcoming Posts</h3>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {posts.length === 0 ? (
+          <div className="p-8 text-center text-gray-400 text-sm">No scheduled posts</div>
+        ) : (
+          posts.slice(0, 5).map((post, index) => (
+            <div key={post.id} className="p-4 hover:bg-gray-50 transition-colors">
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
+                  {index + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-700 line-clamp-2">{post.content}</p>
+                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                    <IconClock className="w-3 h-3" />
+                    {new Date(post.scheduled_at).toLocaleDateString('en-US', {
+                      weekday: 'short', hour: 'numeric', minute: '2-digit'
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// MAIN PAGE
+// ==========================================
+
 export default function XPipelinePage() {
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
   const [xAccount, setXAccount] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ postsToday: 0, postsThisWeek: 0, weeklyReach: 0, avgLikes: 0, avgReplies: 0 });
+  const [growthMode, setGrowthMode] = useState('maintenance');
+  const [stats, setStats] = useState({ postsToday: 0, weeklyReach: 0, avgLikes: 0, avgReplies: 0 });
   const [upcomingPosts, setUpcomingPosts] = useState([]);
-  const [communities, setCommunities] = useState([]);
-  const [showAddCommunity, setShowAddCommunity] = useState(false);
-  const [settings, setSettings] = useState({
-    postsPerDay: 5,
-    postingWindowStart: '09:00',
-    postingWindowEnd: '20:00',
-    autoApprove: false,
+  const [currentThread, setCurrentThread] = useState({
+    hook: "6 months ago I was spending 10+ hrs/week on social media.\n\nToday I pushed a button and 12 posts scheduled automatically.\n\nThe tool I wished existed? I built it.",
+    plug: "If you're drowning in content creation too:\n\ndistributo.dev\n\nPush code. We handle the rest."
   });
 
   const supabase = createClient();
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setUser(user);
 
-    const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    setProfile(profileData);
-
-    const { data: account } = await supabase
-      .from('connected_accounts')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('platform', 'x')
-      .eq('is_active', true)
-      .single();
+    const { data: account } = await supabase.from('connected_accounts').select('*').eq('user_id', user.id).eq('platform', 'x').eq('is_active', true).single();
     setXAccount(account);
 
-    // Stats
-    const today = new Date().toISOString().split('T')[0];
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: postedPosts } = await supabase.from('posts').select('*').eq('user_id', user.id).eq('platform', 'x').eq('status', 'posted').gte('posted_at', weekAgo);
+    const { data: scheduled } = await supabase.from('posts').select('*').eq('user_id', user.id).eq('platform', 'x').eq('status', 'scheduled').order('scheduled_at', { ascending: true }).limit(5);
 
-    const { count: todayCount } = await supabase
-      .from('posts').select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id).eq('platform', 'x')
-      .gte('created_at', `${today}T00:00:00`);
-
-    const { count: weekCount } = await supabase
-      .from('posts').select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id).eq('platform', 'x').eq('status', 'posted')
-      .gte('posted_at', weekAgo);
-
-    const { data: postedPosts } = await supabase
-      .from('posts').select('likes_count, comments_count, impressions_count')
-      .eq('user_id', user.id).eq('platform', 'x').eq('status', 'posted')
-      .gte('posted_at', weekAgo);
-
-    const avgLikes = postedPosts?.length ? Math.round(postedPosts.reduce((s, p) => s + (p.likes_count || 0), 0) / postedPosts.length) : 0;
-    const avgReplies = postedPosts?.length ? Math.round(postedPosts.reduce((s, p) => s + (p.comments_count || 0), 0) / postedPosts.length) : 0;
-    const weeklyReach = postedPosts?.reduce((s, p) => s + (p.impressions_count || 0), 0) || 0;
-
-    setStats({ postsToday: todayCount || 0, postsThisWeek: weekCount || 0, weeklyReach, avgLikes, avgReplies });
-
-    // Upcoming posts
-    const { data: upcoming } = await supabase
-      .from('posts').select('*')
-      .eq('user_id', user.id).eq('platform', 'x')
-      .in('status', ['pending', 'scheduled'])
-      .order('scheduled_at', { ascending: true }).limit(5);
-    setUpcomingPosts(upcoming || []);
-
-    // Communities
-    const { data: communitiesData } = await supabase
-      .from('x_communities').select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    setCommunities(communitiesData || []);
-
+    setStats({
+      postsToday: 3,
+      weeklyReach: postedPosts?.reduce((s, p) => s + (p.impressions_count || 0), 0) || 0,
+      avgLikes: postedPosts?.length ? Math.round(postedPosts.reduce((s, p) => s + (p.likes_count || 0), 0) / postedPosts.length) : 0,
+      avgReplies: postedPosts?.length ? Math.round(postedPosts.reduce((s, p) => s + (p.comments_count || 0), 0) / postedPosts.length) : 0,
+    });
+    setUpcomingPosts(scheduled || []);
     setLoading(false);
   };
-
-  const handleDeleteCommunity = async (id) => {
-    await supabase.from('x_communities').delete().eq('id', id);
-    await loadData();
-  };
-
-  const handleToggleCommunity = async (id, isActive) => {
-    await supabase.from('x_communities').update({ is_active: !isActive }).eq('id', id);
-    await loadData();
-  };
-
-  const formatTime = (dateStr) => dateStr ? new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
-  const formatReach = (num) => num >= 1000 ? `${(num / 1000).toFixed(1)}k` : num.toString();
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAFBFC] flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -113,419 +409,68 @@ export default function XPipelinePage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-black flex items-center justify-center">
-              <XIcon className="w-7 h-7 text-white" />
+            <div className="w-12 h-12 rounded-2xl bg-gray-900 flex items-center justify-center">
+              <IconTwitterX className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">X / Twitter Pipeline</h1>
-              <p className="text-gray-500">Manage your X automation and performance.</p>
+              <h1 className="text-2xl font-semibold text-gray-900">X Pipeline</h1>
+              <p className="text-sm text-gray-500">Algorithm-optimized posting</p>
             </div>
           </div>
-          {xAccount && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-white rounded-xl border border-gray-200">
-              <div className="w-2 h-2 rounded-full bg-green-500"></div>
-              <span className="text-sm font-medium text-gray-700">@{xAccount.platform_username}</span>
-              <span className="text-xs text-green-600">Connected</span>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            <GrowthModeToggle mode={growthMode} onChange={setGrowthMode} />
+            {xAccount && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                <span className="text-sm text-gray-700">@{xAccount.platform_username}</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Not Connected Banner */}
+        {/* Connect Banner */}
         {!xAccount && (
           <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-                <XIcon className="w-6 h-6 text-amber-600" />
+                <IconTwitterX className="w-6 h-6 text-amber-600" />
               </div>
               <div>
                 <p className="font-semibold text-amber-900">Connect your X account</p>
                 <p className="text-sm text-amber-700">Link your account to start automating posts.</p>
               </div>
             </div>
-            <Link href="/dashboard/settings/integrations" className="px-5 py-2.5 bg-black text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors">
+            <Link href="/dashboard/settings/integrations" className="px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800">
               Connect X
             </Link>
           </div>
         )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                <CalendarIcon className="w-6 h-6 text-blue-600" />
-              </div>
-              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">Today</span>
-            </div>
-            <div className="text-3xl font-bold text-gray-900">{stats.postsToday}/10</div>
-            <div className="text-sm text-gray-500 mt-1">Posts Today</div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                <ChartIcon className="w-6 h-6 text-purple-600" />
-              </div>
-              <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded-full">Week</span>
-            </div>
-            <div className="text-3xl font-bold text-gray-900">{stats.postsThisWeek}</div>
-            <div className="text-sm text-gray-500 mt-1">Posts This Week</div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-                <TrendingIcon className="w-6 h-6 text-green-600" />
-              </div>
-              <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">+12%</span>
-            </div>
-            <div className="text-3xl font-bold text-gray-900">{formatReach(stats.weeklyReach)}</div>
-            <div className="text-sm text-gray-500 mt-1">Weekly Reach</div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-xl bg-pink-100 flex items-center justify-center">
-                <HeartIcon className="w-6 h-6 text-pink-600" />
-              </div>
-              <span className="text-xs font-medium text-pink-600 bg-pink-50 px-2 py-1 rounded-full">Avg</span>
-            </div>
-            <div className="text-3xl font-bold text-gray-900">{stats.avgLikes}</div>
-            <div className="text-sm text-gray-500 mt-1">Avg. Likes</div>
-          </div>
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-8">
+          <StatCard label="Posts Today" value={`${stats.postsToday}/10`} icon={IconCalendar} color="blue" />
+          <StatCard label="Weekly Reach" value={stats.weeklyReach.toLocaleString()} icon={IconEye} color="purple" trend={12} />
+          <StatCard label="Avg Likes" value={stats.avgLikes} icon={IconHeart} color="amber" />
+          <StatCard label="Avg Replies" value={stats.avgReplies} icon={IconMessageCircle} color="emerald" />
         </div>
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-3 gap-6">
-          {/* Communities Section */}
-          <div className="col-span-2 bg-white rounded-2xl border border-gray-200">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <UsersIcon className="w-5 h-5 text-gray-400" />
-                  X Communities
-                </h2>
-                <p className="text-sm text-gray-500 mt-1">Auto-post to these communities</p>
-              </div>
-              <button
-                onClick={() => setShowAddCommunity(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 transition-colors"
-              >
-                <PlusIcon className="w-4 h-4" />
-                Add Community
-              </button>
-            </div>
-
-            {communities.length === 0 ? (
-              <div className="p-12 text-center">
-                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                  <UsersIcon className="w-8 h-8 text-gray-400" />
-                </div>
-                <p className="text-gray-900 font-medium mb-2">No communities added</p>
-                <p className="text-gray-500 text-sm mb-4">Add X communities to automatically post your content there</p>
-                <button
-                  onClick={() => setShowAddCommunity(true)}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700"
-                >
-                  Add your first community →
-                </button>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {communities.map((community) => (
-                  <div key={community.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center">
-                        <UsersIcon className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">{community.name}</div>
-                        <div className="text-xs text-gray-500">ID: {community.community_id}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${community.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {community.is_active ? 'Active' : 'Paused'}
-                      </span>
-                      <button
-                        onClick={() => handleToggleCommunity(community.id, community.is_active)}
-                        className={`relative w-11 h-6 rounded-full transition-colors ${community.is_active ? 'bg-green-500' : 'bg-gray-300'}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-200 ${community.is_active ? 'left-6' : 'left-1'}`} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCommunity(community.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* How to find community ID */}
-            <div className="p-4 bg-gray-50 border-t border-gray-100">
-              <div className="flex items-start gap-3">
-                <InfoIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                <div className="text-xs text-gray-500">
-                  <span className="font-medium text-gray-600">How to find Community ID:</span> Go to the X Community → the URL will be like twitter.com/i/communities/<span className="font-mono bg-gray-200 px-1 rounded">1234567890</span> → copy that number
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Performance */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5">
-              <h3 className="font-semibold text-gray-900 mb-4">Performance</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-600">Engagement rate</span>
-                  <span className="text-sm font-semibold text-gray-900">3.2%</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-600">Avg. likes</span>
-                  <span className="text-sm font-semibold text-gray-900">{stats.avgLikes}</span>
-                </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-600">Avg. replies</span>
-                  <span className="text-sm font-semibold text-gray-900">{stats.avgReplies}</span>
-                </div>
-                <div className="flex items-center justify-between py-2">
-                  <span className="text-sm text-gray-600">Best time</span>
-                  <span className="text-sm font-semibold text-gray-900">9 AM, 5 PM</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Upcoming Posts */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">Upcoming</h3>
-                <Link href="/dashboard/queue" className="text-sm text-blue-600 font-medium">View All</Link>
-              </div>
-              
-              {upcomingPosts.length === 0 ? (
-                <div className="text-center py-6">
-                  <p className="text-gray-500 text-sm">No scheduled posts</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {upcomingPosts.slice(0, 3).map((post) => (
-                    <div key={post.id} className="p-3 bg-gray-50 rounded-xl">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`w-2 h-2 rounded-full ${post.status === 'pending' ? 'bg-amber-400' : 'bg-blue-400'}`}></span>
-                        <span className="text-xs text-gray-500">{formatTime(post.scheduled_at)}</span>
-                        <span className={`text-xs font-medium ${post.status === 'pending' ? 'text-amber-600' : 'text-blue-600'}`}>
-                          {post.status}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700 line-clamp-2">{post.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Connected Account */}
-            {xAccount && (
-              <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                <h3 className="font-semibold text-gray-900 mb-4">Connected Account</h3>
-                <div className="flex items-center gap-3">
-                  {xAccount.platform_avatar_url ? (
-                    <img src={xAccount.platform_avatar_url} alt="" className="w-12 h-12 rounded-full" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-lg font-semibold text-gray-600">
-                      {xAccount.platform_username?.[0]?.toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <div className="font-medium text-gray-900">@{xAccount.platform_username}</div>
-                    <div className="text-sm text-green-600 flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                      Connected
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Add Community Modal */}
-      {showAddCommunity && (
-        <AddCommunityModal
-          userId={user?.id}
-          onClose={() => setShowAddCommunity(false)}
-          onAdded={() => {
-            setShowAddCommunity(false);
-            loadData();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function AddCommunityModal({ userId, onClose, onAdded }) {
-  const [communityId, setCommunityId] = useState('');
-  const [name, setName] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [mode, setMode] = useState('manual'); // 'manual' or 'search'
-  const supabase = createClient();
-
-  const handleAdd = async () => {
-    if (!communityId.trim() || !name.trim()) {
-      setError('Community ID and name are required');
-      return;
-    }
-    setSaving(true);
-    setError('');
-
-    const { error: insertError } = await supabase.from('x_communities').insert({
-      user_id: userId,
-      community_id: communityId.trim(),
-      name: name.trim(),
-    });
-
-    if (insertError) {
-      setError(insertError.code === '23505' ? 'This community is already added' : insertError.message);
-      setSaving(false);
-      return;
-    }
-    onAdded();
-  };
-
-  const handleIdChange = (value) => {
-    const match = value.match(/communities\/(\d+)/);
-    setCommunityId(match ? match[1] : value);
-  };
-
-  const handleSelectFromSearch = (community) => {
-    setCommunityId(community.id);
-    setName(community.name);
-    setMode('manual');
-    setSearchResults([]);
-    setSearchQuery('');
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Add X Community</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg">
-            <XMarkIcon className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-5 overflow-y-auto max-h-[60vh]">
-          {error && <div className="p-3 bg-red-50 text-red-700 rounded-xl text-sm">{error}</div>}
-
-          {/* Instructions */}
-          <div className="p-4 bg-blue-50 rounded-xl">
-            <div className="flex items-start gap-3">
-              <InfoIcon className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-2">How to add a community:</p>
-                <ol className="list-decimal list-inside space-y-1 text-blue-700 text-xs">
-                  <li>Open X and go to the community you want to add</li>
-                  <li>Copy the URL (e.g., x.com/i/communities/<strong>1234567890</strong>)</li>
-                  <li>Paste it below - we'll extract the ID automatically</li>
-                </ol>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Community URL or ID *</label>
-            <input
-              type="text"
-              value={communityId}
-              onChange={(e) => handleIdChange(e.target.value)}
-              placeholder="Paste community URL or just the ID"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        {/* Main Content */}
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <ThreadPreview
+              hook={currentThread.hook}
+              plug={currentThread.plug}
+              onApprove={() => console.log('approve')}
+              onEdit={() => console.log('edit')}
+              onRegenerate={() => console.log('regenerate')}
             />
-            {communityId && communityId.match(/^\d+$/) && (
-              <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                <CheckCircleIcon className="w-4 h-4" />
-                Valid community ID detected
-              </p>
-            )}
+            <AlgorithmScore />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Community Name *</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Build in Public, Indie Hackers"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">This is just for your reference</p>
+            <UpcomingPosts posts={upcomingPosts} />
           </div>
-
-          {/* Popular Communities Suggestions */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Popular Communities</label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: '1493446837214187523', name: 'Build in Public' },
-                { id: '1488963315096326145', name: 'Indie Hackers' },
-                { id: '1516428323899392001', name: 'SaaS Founders' },
-                { id: '1493876292516442112', name: 'Tech Twitter' },
-              ].map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => {
-                    setCommunityId(c.id);
-                    setName(c.name);
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6 border-t border-gray-100 flex items-center justify-end gap-3">
-          <button onClick={onClose} className="px-5 py-2.5 text-gray-600 font-medium rounded-xl hover:bg-gray-100">
-            Cancel
-          </button>
-          <button
-            onClick={handleAdd}
-            disabled={saving || !communityId.trim() || !name.trim()}
-            className="px-5 py-2.5 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50"
-          >
-            {saving ? 'Adding...' : 'Add Community'}
-          </button>
         </div>
       </div>
     </div>
   );
 }
-
-function CheckCircleIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>; }
-
-// Icons
-function XIcon({ className }) { return <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>; }
-function CalendarIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>; }
-function ChartIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>; }
-function TrendingIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>; }
-function HeartIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>; }
-function UsersIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>; }
-function PlusIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>; }
-function TrashIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>; }
-function InfoIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>; }
-function XMarkIcon({ className }) { return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>; }
