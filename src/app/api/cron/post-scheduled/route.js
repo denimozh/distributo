@@ -1,5 +1,4 @@
 // src/app/api/cron/post-scheduled/route.js
-// UPDATED: Now supports threaded posting (Hook + Plug pattern) for algorithm optimization
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
@@ -8,10 +7,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-// Delay between hook and plug (in milliseconds)
-// 60 seconds is optimal - gives time for initial engagement before adding link
-const PLUG_DELAY_MS = 60 * 1000;
 
 export async function GET(request) {
   const startTime = Date.now();
@@ -68,12 +63,7 @@ export async function GET(request) {
     const results = [];
 
     for (const post of posts) {
-      const postResult = { 
-        id: post.id, 
-        platform: post.platform, 
-        status: 'pending',
-        is_thread: post.is_thread || post.has_plug || false,
-      };
+      const postResult = { id: post.id, platform: post.platform, status: 'pending' };
       
       try {
         if (post.platform === 'x') {
@@ -134,9 +124,9 @@ export async function GET(request) {
   }
 }
 
-// ============================================================================
-// X (TWITTER) POSTING - WITH THREADING SUPPORT
-// ============================================================================
+// ==========================================
+// X (TWITTER) POSTING - WITH PLUG & COMMUNITY SUPPORT
+// ==========================================
 
 async function processXPost(post, postResult) {
   // Get the connected account for this user
@@ -157,181 +147,29 @@ async function processXPost(post, postResult) {
   // Get valid access token (refreshes if needed)
   const accessToken = await getValidXAccessToken(account);
 
-  // Determine if this is a threaded post (hook + plug pattern)
-  const isThread = post.is_thread || post.has_plug || (post.hook_content && post.plug_content);
+  // Use hook_content if available, otherwise use content
+  const mainContent = post.hook_content || post.content;
   
-  if (isThread) {
-    console.log(`[CRON] 🧵 Posting as THREAD (Hook + Plug pattern for algorithm optimization)`);
-    await postXThread(post, account, accessToken, postResult);
-  } else {
-    console.log(`[CRON] Posting single tweet`);
-    await postSingleXTweet(post, account, accessToken, postResult);
-  }
-}
-
-// ============================================================================
-// POST X THREAD (Hook → 60s delay → Plug as reply)
-// This is the key algorithm optimization!
-// ============================================================================
-
-async function postXThread(post, account, accessToken, postResult) {
-  // Use hook_content if available, otherwise fall back to content
-  const hookContent = post.hook_content || post.content;
-  const plugContent = post.plug_content;
-
-  if (!hookContent) {
-    throw new Error('No hook content available for thread');
-  }
-
-  // ========================================
-  // STEP 1: Post the HOOK (no link, max engagement)
-  // ========================================
-  console.log(`[CRON] 🪝 Posting HOOK: "${hookContent.substring(0, 50)}..."`);
+  // Build the tweet payload
+  const tweetPayload = { text: mainContent };
   
-  const hookPayload = { text: hookContent };
-  
-  // Add community if specified
+  // Add community_id if posting to a community
   if (post.community_id) {
-    // Look up the community's X ID
-    const { data: community } = await supabase
-      .from('x_communities')
-      .select('community_id')
-      .eq('id', post.community_id)
-      .single();
-    
-    if (community?.community_id) {
-      hookPayload.community_id = community.community_id;
-      hookPayload.share_with_followers = false; // Community-only by default
-    }
+    tweetPayload.community_id = post.community_id;
+    tweetPayload.share_with_followers = post.share_with_followers ?? true;
+    console.log(`[CRON] Posting to community: ${post.community_id}`);
   }
 
-  const hookResponse = await fetch('https://api.twitter.com/2/tweets', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(hookPayload)
-  });
-
-  const hookResponseText = await hookResponse.text();
-  let hookData;
+  // Post main tweet (hook)
+  console.log(`[CRON] Posting tweet: "${mainContent.substring(0, 50)}..."`);
   
-  try {
-    hookData = JSON.parse(hookResponseText);
-  } catch {
-    console.error('[CRON] Invalid JSON response:', hookResponseText);
-    throw new Error('Invalid response from X API');
-  }
-
-  if (!hookResponse.ok) {
-    console.error('[CRON] X API error on HOOK:', hookData);
-    throw new Error(hookData.detail || hookData.title || hookData.errors?.[0]?.message || 'Failed to post hook tweet');
-  }
-
-  const hookTweetId = hookData.data?.id;
-  console.log(`[CRON] ✅ HOOK posted! ID: ${hookTweetId}`);
-
-  // Store hook tweet info
-  postResult.hook_tweet_id = hookTweetId;
-
-  // ========================================
-  // STEP 2: Wait 60 seconds (let hook get initial engagement)
-  // ========================================
-  if (plugContent) {
-    console.log(`[CRON] ⏳ Waiting ${PLUG_DELAY_MS / 1000}s before posting PLUG...`);
-    await new Promise(resolve => setTimeout(resolve, PLUG_DELAY_MS));
-
-    // ========================================
-    // STEP 3: Post the PLUG as a reply (with link)
-    // ========================================
-    console.log(`[CRON] 🔗 Posting PLUG as reply: "${plugContent.substring(0, 50)}..."`);
-
-    const plugPayload = {
-      text: plugContent,
-      reply: {
-        in_reply_to_tweet_id: hookTweetId,
-      },
-    };
-
-    const plugResponse = await fetch('https://api.twitter.com/2/tweets', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(plugPayload)
-    });
-
-    const plugResponseText = await plugResponse.text();
-    let plugData;
-    
-    try {
-      plugData = JSON.parse(plugResponseText);
-    } catch {
-      console.error('[CRON] Invalid JSON response for plug:', plugResponseText);
-      // Don't throw - hook already posted, just log the error
-    }
-
-    if (plugResponse.ok && plugData?.data?.id) {
-      const plugTweetId = plugData.data.id;
-      console.log(`[CRON] ✅ PLUG posted! ID: ${plugTweetId}`);
-      postResult.plug_tweet_id = plugTweetId;
-    } else {
-      console.error('[CRON] ⚠️ PLUG failed but HOOK succeeded:', plugData);
-      // Don't throw - hook was successful
-    }
-  }
-
-  // ========================================
-  // STEP 4: Update post status in database
-  // ========================================
-  await supabase
-    .from('posts')
-    .update({
-      status: 'posted',
-      posted_at: new Date().toISOString(),
-      external_id: hookTweetId, // Store hook as primary
-      external_url: `https://x.com/${account.platform_username}/status/${hookTweetId}`,
-      plug_tweet_id: postResult.plug_tweet_id || null,
-      error_message: null,
-    })
-    .eq('id', post.id);
-
-  postResult.tweet_id = hookTweetId;
-  console.log(`[CRON] 🎉 Thread complete! Hook: ${hookTweetId}, Plug: ${postResult.plug_tweet_id || 'N/A'}`);
-}
-
-// ============================================================================
-// POST SINGLE TWEET (legacy, non-threaded)
-// ============================================================================
-
-async function postSingleXTweet(post, account, accessToken, postResult) {
-  console.log(`[CRON] Posting tweet: "${post.content.substring(0, 50)}..."`);
-  
-  const payload = { text: post.content };
-  
-  // Add community if specified
-  if (post.community_id) {
-    const { data: community } = await supabase
-      .from('x_communities')
-      .select('community_id')
-      .eq('id', post.community_id)
-      .single();
-    
-    if (community?.community_id) {
-      payload.community_id = community.community_id;
-      payload.share_with_followers = false;
-    }
-  }
-
   const tweetResponse = await fetch('https://api.twitter.com/2/tweets', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(tweetPayload)
   });
 
   const responseText = await tweetResponse.text();
@@ -352,6 +190,67 @@ async function postSingleXTweet(post, account, accessToken, postResult) {
   const tweetId = tweetData.data?.id;
   console.log(`[CRON] Tweet posted successfully! ID: ${tweetId}`);
 
+  // Build URL based on whether it's a community post
+  let externalUrl = `https://x.com/${account.platform_username}/status/${tweetId}`;
+  if (post.community_id) {
+    externalUrl = `https://x.com/i/communities/${post.community_id}`;
+  }
+
+  postResult.tweet_id = tweetId;
+  postResult.external_url = externalUrl;
+
+  // ==========================================
+  // POST PLUG (REPLY WITH LINK) IF EXISTS
+  // ==========================================
+  if (post.plug_content && post.plug_content.trim()) {
+    console.log(`[CRON] Post has plug content, waiting before posting reply...`);
+    
+    // Wait for reply delay (default 60 seconds)
+    const replyDelay = (post.reply_delay || 60) * 1000;
+    console.log(`[CRON] Waiting ${replyDelay / 1000}s before posting plug...`);
+    
+    await new Promise(resolve => setTimeout(resolve, replyDelay));
+    
+    // Post the plug as a reply
+    const plugPayload = {
+      text: post.plug_content,
+      reply: {
+        in_reply_to_tweet_id: tweetId
+      }
+    };
+    
+    console.log(`[CRON] Posting plug reply: "${post.plug_content.substring(0, 50)}..."`);
+    
+    const plugResponse = await fetch('https://api.twitter.com/2/tweets', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(plugPayload)
+    });
+    
+    const plugText = await plugResponse.text();
+    let plugData;
+    
+    try {
+      plugData = JSON.parse(plugText);
+    } catch {
+      console.error('[CRON] Invalid JSON response for plug:', plugText);
+      // Don't throw - the main tweet was posted successfully
+    }
+    
+    if (!plugResponse.ok) {
+      console.error('[CRON] Failed to post plug reply:', plugData);
+      // Don't throw - the main tweet was posted successfully
+      // Just log the error and continue
+    } else {
+      const plugId = plugData.data?.id;
+      console.log(`[CRON] Plug reply posted! ID: ${plugId}`);
+      postResult.plug_id = plugId;
+    }
+  }
+
   // Update post status
   await supabase
     .from('posts')
@@ -359,17 +258,15 @@ async function postSingleXTweet(post, account, accessToken, postResult) {
       status: 'posted',
       posted_at: new Date().toISOString(),
       external_id: tweetId,
-      external_url: `https://x.com/${account.platform_username}/status/${tweetId}`,
+      external_url: externalUrl,
       error_message: null,
     })
     .eq('id', post.id);
-
-  postResult.tweet_id = tweetId;
 }
 
-// ============================================================================
-// X TOKEN REFRESH
-// ============================================================================
+// ==========================================
+// TOKEN REFRESH
+// ==========================================
 
 async function getValidXAccessToken(account) {
   // Check if token is expired
@@ -379,34 +276,32 @@ async function getValidXAccessToken(account) {
   if (!isExpired) {
     return account.access_token;
   }
-
+  
   console.log(`[CRON] X token expired, refreshing...`);
   
   if (!account.refresh_token) {
-    throw new Error('No refresh token available. User needs to reconnect X account.');
+    throw new Error('No refresh token available. User needs to reconnect.');
   }
-
-  // Refresh the token
-  const clientId = process.env.X_CLIENT_ID;
-  const clientSecret = process.env.X_CLIENT_SECRET;
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-
+  
+  const clientId = process.env.NEXT_PUBLIC_TWITTER_CLIENT_ID;
+  const clientSecret = process.env.TWITTER_CLIENT_SECRET;
+  
   const refreshResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${basicAuth}`,
+      'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
     },
     body: new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: account.refresh_token,
-    }).toString(),
+    }),
   });
-
+  
   if (!refreshResponse.ok) {
-    const errorData = await refreshResponse.json();
-    console.error('[CRON] X token refresh failed:', errorData);
-    throw new Error('Failed to refresh X token. User needs to reconnect.');
+    const errorData = await refreshResponse.json().catch(() => ({}));
+    console.error('[CRON] Token refresh failed:', errorData);
+    throw new Error('Token refresh failed. User needs to reconnect.');
   }
 
   const tokens = await refreshResponse.json();
@@ -425,9 +320,9 @@ async function getValidXAccessToken(account) {
   return tokens.access_token;
 }
 
-// ============================================================================
+// ==========================================
 // LINKEDIN POSTING
-// ============================================================================
+// ==========================================
 
 async function processLinkedInPost(post, postResult) {
   // Get the connected LinkedIn account
@@ -448,12 +343,8 @@ async function processLinkedInPost(post, postResult) {
   // Get valid access token (refreshes if needed)
   const accessToken = await getValidLinkedInAccessToken(account);
 
-  // For LinkedIn, we combine hook + plug into one post (no threading API)
-  let content = post.content;
-  if (post.hook_content && post.plug_content) {
-    content = `${post.hook_content}\n\n${post.plug_content}`;
-  }
-
+  // Post to LinkedIn using UGC API
+  const content = post.hook_content || post.content;
   console.log(`[CRON] Posting to LinkedIn: "${content.substring(0, 50)}..."`);
   
   const postBody = {
@@ -512,12 +403,8 @@ async function processLinkedInPost(post, postResult) {
     })
     .eq('id', post.id);
 
-  postResult.linkedin_post_id = linkedinPostId;
+  postResult.linkedin_id = linkedinPostId;
 }
-
-// ============================================================================
-// LINKEDIN TOKEN REFRESH
-// ============================================================================
 
 async function getValidLinkedInAccessToken(account) {
   // Check if token is expired
@@ -527,33 +414,33 @@ async function getValidLinkedInAccessToken(account) {
   if (!isExpired) {
     return account.access_token;
   }
-
-  console.log(`[CRON] LinkedIn token expired, attempting refresh...`);
+  
+  console.log(`[CRON] LinkedIn token expired, refreshing...`);
   
   if (!account.refresh_token) {
-    throw new Error('LinkedIn token expired. User needs to reconnect.');
+    throw new Error('No refresh token available. User needs to reconnect.');
   }
-
-  // Try to refresh the token
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: account.refresh_token,
-    client_id: process.env.LINKEDIN_CLIENT_ID,
-    client_secret: process.env.LINKEDIN_CLIENT_SECRET,
-  });
-
+  
+  const clientId = process.env.LINKEDIN_CLIENT_ID;
+  const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
+  
   const refreshResponse = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: params.toString(),
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: account.refresh_token,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
   });
-
+  
   if (!refreshResponse.ok) {
     const errorData = await refreshResponse.json().catch(() => ({}));
     console.error('[CRON] LinkedIn token refresh failed:', errorData);
-    throw new Error('LinkedIn token expired. User needs to reconnect.');
+    throw new Error('LinkedIn token refresh failed. User needs to reconnect.');
   }
 
   const tokens = await refreshResponse.json();
@@ -564,9 +451,7 @@ async function getValidLinkedInAccessToken(account) {
     .update({
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token || account.refresh_token,
-      token_expires_at: tokens.expires_in 
-        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-        : null,
+      token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
     })
     .eq('id', account.id);
 
