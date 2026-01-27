@@ -391,6 +391,57 @@ async function processLinkedInPost(post, postResult) {
   const linkedinPostId = responseData.id;
   
   console.log(`[CRON] LinkedIn post successful! ID: ${linkedinPostId}`);
+  postResult.linkedin_id = linkedinPostId;
+
+  // ==========================================
+  // POST FIRST COMMENT IF EXISTS
+  // ==========================================
+  if (post.first_comment_content && post.first_comment_content.trim()) {
+    console.log(`[CRON] Post has first comment, waiting before posting...`);
+    
+    // Wait for first comment delay (default 45 seconds)
+    const commentDelay = (post.first_comment_delay_seconds || 45) * 1000;
+    console.log(`[CRON] Waiting ${commentDelay / 1000}s before posting first comment...`);
+    
+    await new Promise(resolve => setTimeout(resolve, commentDelay));
+    
+    // Post comment using LinkedIn Comments API
+    // Note: LinkedIn comment API requires the post URN
+    const commentBody = {
+      actor: `urn:li:person:${account.platform_user_id}`,
+      message: {
+        text: post.first_comment_content,
+      },
+      object: linkedinPostId, // The URN of the post
+    };
+    
+    console.log(`[CRON] Posting first comment: "${post.first_comment_content.substring(0, 50)}..."`);
+    
+    try {
+      const commentResponse = await fetch('https://api.linkedin.com/v2/socialActions/' + encodeURIComponent(linkedinPostId) + '/comments', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+        body: JSON.stringify(commentBody),
+      });
+      
+      if (!commentResponse.ok) {
+        const errorData = await commentResponse.json().catch(() => ({}));
+        console.error('[CRON] Failed to post first comment:', errorData);
+        // Don't throw - the main post was successful
+      } else {
+        const commentData = await commentResponse.json();
+        console.log(`[CRON] First comment posted successfully!`);
+        postResult.first_comment_id = commentData.id;
+      }
+    } catch (commentError) {
+      console.error('[CRON] Error posting first comment:', commentError);
+      // Don't throw - the main post was successful
+    }
+  }
 
   // Update post status
   await supabase
@@ -402,8 +453,6 @@ async function processLinkedInPost(post, postResult) {
       error_message: null,
     })
     .eq('id', post.id);
-
-  postResult.linkedin_id = linkedinPostId;
 }
 
 async function getValidLinkedInAccessToken(account) {
