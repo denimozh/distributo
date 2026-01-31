@@ -156,8 +156,11 @@ async function processXPost(post, postResult) {
   // Add community_id if posting to a community
   if (post.community_id) {
     tweetPayload.community_id = post.community_id;
-    tweetPayload.share_with_followers = post.share_with_followers ?? true;
-    console.log(`[CRON] Posting to community: ${post.community_id}`);
+    // share_with_followers = false means ONLY post to community
+    // share_with_followers = true means post to community AND your timeline
+    tweetPayload.share_with_followers = post.share_with_followers ?? false;
+    console.log(`[CRON] Posting to community: ${post.community_id}, share_with_followers: ${tweetPayload.share_with_followers}`);
+    console.log(`[CRON] Full payload:`, JSON.stringify(tweetPayload, null, 2));
   }
 
   // Post main tweet (hook)
@@ -173,6 +176,9 @@ async function processXPost(post, postResult) {
   });
 
   const responseText = await tweetResponse.text();
+  console.log(`[CRON] X API Response Status: ${tweetResponse.status}`);
+  console.log(`[CRON] X API Response Body: ${responseText}`);
+  
   let tweetData;
   
   try {
