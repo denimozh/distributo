@@ -278,7 +278,7 @@ function PostCard({ post, onClick }) {
 // EDIT POST MODAL - REDESIGNED WITH TABS
 // ==========================================
 
-function EditPostModal({ post, communities = [], onSave, onClose, onCommunitiesChange }) {
+function EditPostModal({ post, communities = [], onSave, onClose, onCommunitiesChange, onDelete, onApprove, onUnapprove }) {
   // Content state
   const [hookContent, setHookContent] = useState(post?.hook_content || post?.content || '');
   const [plugContent, setPlugContent] = useState(post?.plug_content || '');
@@ -289,16 +289,43 @@ function EditPostModal({ post, communities = [], onSave, onClose, onCommunitiesC
   const [scheduleTime, setScheduleTime] = useState('');
   
   // Community state
-  const [selectedCommunity, setSelectedCommunity] = useState(post?.community_id || '');
+  // Note: post.community_id is a UUID, but we display/select by X community ID
+  // Find the X community ID from the UUID if it exists
+  const getXCommunityIdFromUuid = (uuid) => {
+    if (!uuid) return '';
+    const community = communities.find(c => c.id === uuid);
+    return community?.community_id || '';
+  };
+  
+  const [selectedCommunity, setSelectedCommunity] = useState(() => {
+    // If post.community_id looks like a UUID, convert it
+    if (post?.community_id && post.community_id.includes('-')) {
+      // It's a UUID - will be converted once communities load
+      return '';
+    }
+    return post?.community_id || '';
+  });
   const [shareWithFollowers, setShareWithFollowers] = useState(post?.share_with_followers ?? true);
   const [showAddCommunity, setShowAddCommunity] = useState(false);
   const [newCommunityId, setNewCommunityId] = useState('');
   const [newCommunityName, setNewCommunityName] = useState('');
   const [addingCommunity, setAddingCommunity] = useState(false);
   
+  // When communities load, convert UUID to X community ID
+  useEffect(() => {
+    if (post?.community_id && post.community_id.includes('-') && communities.length > 0) {
+      const xCommunityId = getXCommunityIdFromUuid(post.community_id);
+      if (xCommunityId) {
+        setSelectedCommunity(xCommunityId);
+        console.log('[EditModal] Converted UUID to X community ID:', xCommunityId);
+      }
+    }
+  }, [communities, post?.community_id]);
+  
   // UI state
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('content');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   const supabase = createClient();
   
@@ -377,13 +404,25 @@ function EditPostModal({ post, communities = [], onSave, onClose, onCommunitiesC
     
     console.log('[EditModal] Saving with scheduled_at:', scheduledAt);
     
+    // IMPORTANT: The posts.community_id column expects a UUID (x_communities.id)
+    // but selectedCommunity is the actual X community ID (like "1493446837214187523")
+    // We need to find the UUID for this X community ID
+    let communityUuid = null;
+    if (selectedCommunity) {
+      const matchingCommunity = communities.find(c => c.community_id === selectedCommunity);
+      if (matchingCommunity) {
+        communityUuid = matchingCommunity.id; // This is the UUID
+        console.log('[EditModal] Found community UUID:', communityUuid, 'for X community ID:', selectedCommunity);
+      }
+    }
+    
     await onSave(post.id, {
       content: hookContent,
       hook_content: hookContent,
       plug_content: plugContent || null,
       reply_delay: replyDelay,
       scheduled_at: scheduledAt,
-      community_id: selectedCommunity || null,
+      community_id: communityUuid, // Pass the UUID, not the X community ID
       share_with_followers: shareWithFollowers,
     });
     
@@ -909,22 +948,15 @@ function EditPostModal({ post, communities = [], onSave, onClose, onCommunitiesC
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50 flex-shrink-0">
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <IconClock className="w-4 h-4" />
-            <span>
-              {scheduleDate && scheduleTime 
-                ? new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString('en-US', {
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true,
-                  })
-                : post?.scheduled_at 
-                  ? new Date(post.scheduled_at).toLocaleString('en-US', {
+        {/* Footer - Fixed Layout */}
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex-shrink-0">
+          {/* Top row - Date and Community info */}
+          <div className="flex items-center gap-3 text-sm text-gray-500 mb-3">
+            <div className="flex items-center gap-2">
+              <IconClock className="w-4 h-4" />
+              <span>
+                {scheduleDate && scheduleTime 
+                  ? new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString('en-US', {
                       weekday: 'short',
                       month: 'short',
                       day: 'numeric',
@@ -932,44 +964,147 @@ function EditPostModal({ post, communities = [], onSave, onClose, onCommunitiesC
                       minute: '2-digit',
                       hour12: true,
                     })
-                  : 'Not scheduled'
-              }
-            </span>
+                  : post?.scheduled_at 
+                    ? new Date(post.scheduled_at).toLocaleString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      })
+                    : 'Not scheduled'
+                }
+              </span>
+            </div>
             {selectedCommunity && (
               <>
                 <span className="text-gray-300">•</span>
                 <span className="text-purple-600 flex items-center gap-1">
                   <IconUsers className="w-3.5 h-3.5" />
-                  Community
+                  {communities.find(c => c.community_id === selectedCommunity)?.name || 'Community'}
                 </span>
               </>
             )}
           </div>
           
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="px-5 py-2.5 text-gray-600 font-medium rounded-xl hover:bg-gray-200 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || hookOverLimit || (hasPlug && plugOverLimit) || !hookContent.trim()}
-              className="px-6 py-2.5 bg-gradient-to-r from-gray-800 to-gray-900 text-white font-medium rounded-xl hover:from-gray-700 hover:to-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <IconLoader className="w-4 h-4" />
-                  Saving...
-                </>
-              ) : (
-                'Save Changes'
+          {/* Bottom row - Action buttons */}
+          <div className="flex items-center justify-between">
+            {/* Left side - Delete button */}
+            <div>
+              {onDelete && (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-2 text-red-600 font-medium rounded-xl hover:bg-red-50 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Delete
+                </button>
               )}
-            </button>
+            </div>
+            
+            {/* Right side - Action buttons */}
+            <div className="flex items-center gap-2">
+              {/* Approve button - only for pending posts */}
+              {post.status === 'pending' && onApprove && (
+                <button
+                  onClick={() => {
+                    onApprove(post.id);
+                    onClose();
+                  }}
+                  className="px-4 py-2 text-green-600 font-medium rounded-xl hover:bg-green-50 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                  Approve
+                </button>
+              )}
+              
+              {/* Unapprove button - only for scheduled posts */}
+              {post.status === 'scheduled' && onUnapprove && (
+                <button
+                  onClick={() => {
+                    onUnapprove(post.id);
+                    onClose();
+                  }}
+                  className="px-4 py-2 text-amber-600 font-medium rounded-xl hover:bg-amber-50 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  Unapprove
+                </button>
+              )}
+              
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-gray-600 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || hookOverLimit || (hasPlug && plugOverLimit) || !hookContent.trim()}
+                className="px-5 py-2 bg-gradient-to-r from-gray-800 to-gray-900 text-white font-medium rounded-xl hover:from-gray-700 hover:to-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <IconLoader className="w-4 h-4" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">Delete Post?</h3>
+              <p className="text-sm text-gray-500 text-center">
+                This action cannot be undone. The post will be permanently removed from your queue.
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-gray-600 font-medium rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onDelete(post.id);
+                  setShowDeleteConfirm(false);
+                  onClose();
+                }}
+                className="px-4 py-2 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors"
+              >
+                Delete Post
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1024,10 +1159,55 @@ function CalendarView({ posts, currentWeekStart, onNavigateWeek, onPostClick, on
   };
 
   const getGhostSlotsForDay = (day) => {
+    // No ghost slots for past days
     if (isPast(day)) return [];
+    
     const dayPosts = getPostsForDay(day);
-    if (dayPosts.length > 0) return [];
-    return X_POSTING_SCHEDULE;
+    const now = new Date();
+    const isToday = day.toDateString() === now.toDateString();
+    
+    // Find the latest scheduled post time for this day
+    let latestPostTime = null;
+    dayPosts.forEach(post => {
+      if (post.scheduled_at) {
+        const postDate = new Date(post.scheduled_at);
+        if (!latestPostTime || postDate > latestPostTime) {
+          latestPostTime = postDate;
+        }
+      }
+    });
+    
+    // If there are posts, only show ghost slots AFTER the last post
+    // If no posts, show the first available slot (or all if you prefer)
+    return X_POSTING_SCHEDULE.filter(slot => {
+      const slotTime = new Date(day);
+      slotTime.setHours(slot.hour, slot.minute, 0, 0);
+      
+      // For today, only show slots for future times
+      if (isToday && slotTime <= now) {
+        return false;
+      }
+      
+      // Check if there's already a post at this time slot
+      const hasPostAtTime = dayPosts.some(post => {
+        if (!post.scheduled_at) return false;
+        const postDate = new Date(post.scheduled_at);
+        return postDate.getHours() === slot.hour && postDate.getMinutes() === slot.minute;
+      });
+      
+      if (hasPostAtTime) return false;
+      
+      // KEY CHANGE: Only show ghost slots AFTER the last scheduled post
+      // If there are posts scheduled, only show ONE ghost slot (the next available after the last post)
+      if (latestPostTime) {
+        // Only show this slot if it's after the last scheduled post
+        if (slotTime <= latestPostTime) {
+          return false;
+        }
+      }
+      
+      return true;
+    }).slice(0, 1); // Only show ONE ghost slot (the next available)
   };
 
   return (
@@ -1294,8 +1474,50 @@ export default function ContentQueuePage() {
     }
   };
 
+  // Delete a single post
+  const handleDeletePost = async (postId) => {
+    const { error } = await supabase.from('posts').delete().eq('id', postId);
+    if (error) {
+      addToast('Failed to delete post', 'error');
+    } else {
+      addToast('Post deleted!', 'success');
+      setSelectedPost(null);
+      await loadPosts();
+    }
+  };
+
+  // Approve a single post (pending → scheduled)
+  const handleApprovePost = async (postId) => {
+    const { error } = await supabase
+      .from('posts')
+      .update({ status: 'scheduled' })
+      .eq('id', postId);
+    if (error) {
+      addToast('Failed to approve post', 'error');
+    } else {
+      addToast('Post approved and scheduled!', 'success');
+      setSelectedPost(null);
+      await loadPosts();
+    }
+  };
+
+  // Unapprove a post (scheduled → pending)
+  const handleUnapprovePost = async (postId) => {
+    const { error } = await supabase
+      .from('posts')
+      .update({ status: 'pending' })
+      .eq('id', postId);
+    if (error) {
+      addToast('Failed to unapprove post', 'error');
+    } else {
+      addToast('Post moved back to pending!', 'success');
+      setSelectedPost(null);
+      await loadPosts();
+    }
+  };
+
   const handleSavePost = async (postId, updates) => {
-    // Build update object carefully, excluding undefined/null community fields if column doesn't exist
+    // Build update object with all fields
     const validUpdates = {
       content: updates.content,
       hook_content: updates.hook_content,
@@ -1303,9 +1525,21 @@ export default function ContentQueuePage() {
       updated_at: new Date().toISOString(),
     };
 
-    // Only add optional fields if they have values
-    if (updates.plug_content) {
+    // Add optional fields if they exist
+    if (updates.plug_content !== undefined) {
       validUpdates.plug_content = updates.plug_content;
+    }
+    if (updates.reply_delay !== undefined) {
+      validUpdates.reply_delay = updates.reply_delay;
+    }
+    
+    // IMPORTANT: Add community_id (the actual X community ID like "1493446837214187523")
+    if (updates.community_id !== undefined) {
+      validUpdates.community_id = updates.community_id;
+      console.log('[SavePost] Setting community_id to:', updates.community_id);
+    }
+    if (updates.share_with_followers !== undefined) {
+      validUpdates.share_with_followers = updates.share_with_followers;
     }
 
     console.log('[SavePost] Attempting update for post:', postId);
@@ -1430,6 +1664,9 @@ export default function ContentQueuePage() {
           onSave={handleSavePost} 
           onClose={() => setSelectedPost(null)}
           onCommunitiesChange={loadCommunities}
+          onDelete={handleDeletePost}
+          onApprove={handleApprovePost}
+          onUnapprove={handleUnapprovePost}
         />
       )}
     </div>

@@ -21,7 +21,6 @@ export default function GitHubAutopilotPage() {
   const [repos, setRepos] = useState([]);
   const [commits, setCommits] = useState([]);
   const [selectedCommit, setSelectedCommit] = useState(null);
-  const [generatedDraft, setGeneratedDraft] = useState("");
   const [generating, setGenerating] = useState(false);
   const [activityLog, setActivityLog] = useState([]);
   const [streak, setStreak] = useState({ days: 0, postsGenerated: 0 });
@@ -30,9 +29,14 @@ export default function GitHubAutopilotPage() {
   const [tone, setTone] = useState("founder");
   const [autopilotEnabled, setAutopilotEnabled] = useState(true);
   const [selectedPlatform, setSelectedPlatform] = useState("x");
+  
+  // Thread state - array of tweets
+  const [threadTweets, setThreadTweets] = useState([]);
+  const [focusedTweetIndex, setFocusedTweetIndex] = useState(0);
 
   const supabase = createClient();
   const activityRef = useRef(null);
+  const textareaRefs = useRef([]);
 
   useEffect(() => {
     loadData();
@@ -136,7 +140,8 @@ export default function GitHubAutopilotPage() {
   const handleCommitClick = async (commit) => {
     setSelectedCommit(commit);
     setGenerating(true);
-    setGeneratedDraft("");
+    setThreadTweets([]);
+    setFocusedTweetIndex(0);
     addActivity("Analyzing: \"" + commit.message.slice(0, 35) + "...\"", "info");
 
     try {
@@ -161,14 +166,14 @@ export default function GitHubAutopilotPage() {
 
       console.log("[GitHub] Generated content:", data.content);
       if (data.content) {
-        setGeneratedDraft(data.content);
+        setThreadTweets([{ id: 1, content: data.content }]);
         addActivity("Draft ready for " + (selectedPlatform === "x" ? "X" : "LinkedIn") + "!", "success");
       } else {
         throw new Error("No content returned from API");
       }
     } catch (error) {
       addActivity("Error: " + error.message, "error");
-      setGeneratedDraft("// Failed to generate. Click to retry.");
+      setThreadTweets([{ id: 1, content: "// Failed to generate. Click to retry." }]);
     } finally {
       setGenerating(false);
     }
@@ -178,26 +183,72 @@ export default function GitHubAutopilotPage() {
     if (selectedCommit) handleCommitClick(selectedCommit);
   };
 
+  // Add a new tweet to the thread (Ctrl+Enter)
+  const handleAddThreadTweet = () => {
+    const newId = threadTweets.length + 1;
+    setThreadTweets([...threadTweets, { id: newId, content: "" }]);
+    setFocusedTweetIndex(threadTweets.length);
+    // Focus the new textarea after render
+    setTimeout(() => {
+      textareaRefs.current[threadTweets.length]?.focus();
+    }, 50);
+  };
+
+  // Update a specific tweet's content
+  const handleTweetChange = (index, newContent) => {
+    const updated = [...threadTweets];
+    updated[index] = { ...updated[index], content: newContent };
+    setThreadTweets(updated);
+  };
+
+  // Remove a tweet from thread
+  const handleRemoveTweet = (index) => {
+    if (threadTweets.length <= 1) return;
+    const updated = threadTweets.filter((_, i) => i !== index);
+    setThreadTweets(updated);
+    setFocusedTweetIndex(Math.max(0, index - 1));
+  };
+
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e, index) => {
+    // Ctrl+Enter or Cmd+Enter to add new tweet
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleAddThreadTweet();
+    }
+    // Backspace on empty tweet to remove it
+    if (e.key === "Backspace" && threadTweets[index]?.content === "" && threadTweets.length > 1) {
+      e.preventDefault();
+      handleRemoveTweet(index);
+    }
+  };
+
   const handleShip = async () => {
-    if (!generatedDraft || !selectedCommit) return;
-    addActivity("Scheduling post to " + (selectedPlatform === "x" ? "X" : "LinkedIn") + "...", "info");
+    if (threadTweets.length === 0 || !selectedCommit) return;
+    addActivity("Scheduling " + (threadTweets.length > 1 ? "thread" : "post") + " to " + (selectedPlatform === "x" ? "X" : "LinkedIn") + "...", "info");
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from("posts").insert({
-        user_id: user.id,
-        content: generatedDraft,
-        platform: selectedPlatform,
-        status: "scheduled",
-        scheduled_at: new Date().toISOString(),
-        source: "github",
-        source_commit: selectedCommit.sha,
-      });
+      
+      // For threads, we save all tweets with thread metadata
+      for (let i = 0; i < threadTweets.length; i++) {
+        await supabase.from("posts").insert({
+          user_id: user.id,
+          content: threadTweets[i].content,
+          platform: selectedPlatform,
+          status: "scheduled",
+          scheduled_at: new Date().toISOString(),
+          source: "github",
+          source_commit: selectedCommit.sha,
+          thread_position: i,
+          is_thread: threadTweets.length > 1,
+        });
+      }
 
       await supabase.from("github_commits").update({ post_generated: true }).eq("id", selectedCommit.id);
 
-      addActivity("✓ Post scheduled successfully!", "success");
-      setGeneratedDraft("");
+      addActivity("✓ " + (threadTweets.length > 1 ? "Thread" : "Post") + " scheduled successfully!", "success");
+      setThreadTweets([]);
       setSelectedCommit(null);
       loadData();
     } catch (error) {
@@ -484,12 +535,12 @@ export default function GitHubAutopilotPage() {
           </div>
 
           {/* ============================================
-              CENTER - DRAFTING TABLE (Split View)
+              CENTER - TYPEFULLY-STYLE DRAFTING AREA
               ============================================ */}
           <div className="col-span-6">
             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden h-full flex flex-col">
               
-              {/* Header */}
+              {/* Header with Platform Toggle */}
               <div className="p-4 border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
@@ -528,137 +579,216 @@ export default function GitHubAutopilotPage() {
                 </div>
               </div>
 
-              {/* Split View */}
-              <div className="flex-1 grid grid-cols-2 divide-x divide-gray-100 min-h-[400px]">
-                
-                {/* LEFT: Raw Commit */}
-                <div className="p-5 bg-gray-50/50 flex flex-col">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Raw Commit</div>
-                  
-                  {selectedCommit ? (
-                    <div className="space-y-4">
-                      <div className="p-4 bg-white rounded-xl border border-gray-200">
-                        <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
-                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="7" y2="12"/><line x1="17.01" y1="12" x2="22.96" y2="12"/>
-                          </svg>
-                          <code className="font-mono">{selectedCommit.sha?.slice(0, 7)}</code>
-                          <span>•</span>
-                          <span>{getTimeAgo(selectedCommit.committed_at)}</span>
-                        </div>
-                        <p className="text-sm text-gray-900 font-medium">{selectedCommit.message}</p>
-                        {selectedCommit.github_repos?.repo_name && (
-                          <p className="text-xs text-gray-500 mt-2">{selectedCommit.github_repos.repo_name}</p>
-                        )}
-                      </div>
-
-                      {/* Diff Summary */}
-                      {(selectedCommit.additions > 0 || selectedCommit.deletions > 0) && (
-                        <div className="p-4 bg-white rounded-xl border border-gray-200">
-                          <div className="text-xs font-medium text-gray-600 mb-2">Changes</div>
-                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden flex mb-2">
-                            <div className="bg-green-500 h-full" style={{ width: (selectedCommit.additions / (selectedCommit.additions + selectedCommit.deletions + 1) * 100) + "%" }}></div>
-                            <div className="bg-red-500 h-full" style={{ width: (selectedCommit.deletions / (selectedCommit.additions + selectedCommit.deletions + 1) * 100) + "%" }}></div>
-                          </div>
-                          <div className="flex gap-4 text-xs">
-                            <span className="text-green-600 font-medium">+{selectedCommit.additions}</span>
-                            <span className="text-red-600 font-medium">-{selectedCommit.deletions}</span>
-                            <span className="text-gray-500">{selectedCommit.files_changed || 0} files</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* File List */}
-                      {selectedCommit.diff_summary?.files?.length > 0 && (
-                        <div className="p-4 bg-white rounded-xl border border-gray-200">
-                          <div className="text-xs font-medium text-gray-600 mb-2">Files</div>
-                          <div className="space-y-1 max-h-24 overflow-y-auto">
-                            {selectedCommit.diff_summary.files.slice(0, 5).map((f, i) => (
-                              <div key={i} className="text-xs text-gray-600 font-mono truncate flex items-center gap-1">
-                                <svg className="w-3 h-3 text-gray-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
-                                </svg>
-                                {f.filename || f}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-gray-400">
-                      <div className="text-center">
-                        <svg className="w-12 h-12 mx-auto mb-2 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              {/* Compact Commit Context Bar (only when commit selected) */}
+              {selectedCommit && (
+                <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 text-xs">
+                        <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="7" y2="12"/><line x1="17.01" y1="12" x2="22.96" y2="12"/>
                         </svg>
-                        <p className="text-sm">Select a commit</p>
+                        <code className="font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">{selectedCommit.sha?.slice(0, 7)}</code>
                       </div>
+                      <span className="text-gray-300">•</span>
+                      <span className="text-xs text-gray-500 font-medium truncate max-w-[200px]">{selectedCommit.message}</span>
+                      <span className="text-gray-300">•</span>
+                      <span className="text-xs text-gray-400">{getTimeAgo(selectedCommit.committed_at)}</span>
                     </div>
-                  )}
-                </div>
-
-                {/* RIGHT: AI Draft */}
-                <div className="p-5 flex flex-col">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">AI Draft</div>
-                    <span className={"px-2 py-0.5 rounded text-xs font-medium " + (tone === "dev" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700")}>
-                      {tone === "dev" ? "Dev Mode" : "Founder Mode"}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      {(selectedCommit.additions > 0 || selectedCommit.deletions > 0) && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-green-600 font-medium">+{selectedCommit.additions}</span>
+                          <span className="text-red-600 font-medium">-{selectedCommit.deletions}</span>
+                        </div>
+                      )}
+                      <span className={"px-2 py-0.5 rounded text-xs font-medium " + (tone === "dev" ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700")}>
+                        {tone === "dev" ? "Dev Mode" : "Founder Mode"}
+                      </span>
+                    </div>
                   </div>
+                </div>
+              )}
 
-                  {generating ? (
-                    <div className="flex-1 flex items-center justify-center min-h-[250px]">
-                      <div className="space-y-3 w-full animate-pulse">
-                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                        <div className="h-4 bg-gray-200 rounded w-full"></div>
-                        <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-                        <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+              {/* Main Editor Area - Typefully Style - Full Height */}
+              <div className="flex-1 flex flex-col">
+                {generating ? (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="w-full max-w-md space-y-4 animate-pulse">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
+                        <div className="flex-1">
+                          <div className="h-3 bg-gray-200 rounded w-24 mb-2"></div>
+                          <div className="h-2 bg-gray-100 rounded w-16"></div>
+                        </div>
+                      </div>
+                      <div className="h-4 bg-gray-200 rounded w-full"></div>
+                      <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                      <div className="h-4 bg-gray-200 rounded w-4/6"></div>
+                      <div className="h-4 bg-gray-100 rounded w-3/6"></div>
+                    </div>
+                  </div>
+                ) : threadTweets.length > 0 ? (
+                  <div className="flex-1 flex flex-col h-full">
+                    {/* Scrollable Thread Area - only scrolls if multiple tweets */}
+                    <div className={`flex-1 p-6 ${threadTweets.length > 2 ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+                      <div className="max-w-xl mx-auto space-y-0">
+                        {threadTweets.map((tweet, index) => {
+                          const maxLen = selectedPlatform === "x" ? 280 : 3000;
+                          const isOverLimit = tweet.content.length > maxLen;
+                          const isNearLimit = tweet.content.length > maxLen - 20;
+                          
+                          return (
+                            <div key={tweet.id} className="relative group">
+                              {/* Thread connector line */}
+                              {index > 0 && (
+                                <div className="absolute left-5 -top-2 w-0.5 h-4 bg-gray-200"></div>
+                              )}
+                              {index < threadTweets.length - 1 && (
+                                <div className="absolute left-5 bottom-0 w-0.5 h-4 bg-gray-200"></div>
+                              )}
+                              
+                              <div className={`flex gap-3 ${index > 0 ? 'pt-4' : ''}`}>
+                                {/* Avatar */}
+                                <div className="flex-shrink-0 flex flex-col items-center">
+                                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white font-bold text-sm">
+                                    {account?.platform_username?.charAt(0)?.toUpperCase() || 'U'}
+                                  </div>
+                                  {index < threadTweets.length - 1 && (
+                                    <div className="flex-1 w-0.5 bg-gray-200 mt-2"></div>
+                                  )}
+                                </div>
+                                
+                                <div className="flex-1 min-w-0 pb-4">
+                                  {/* Name and handle */}
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-semibold text-gray-900 text-sm">{account?.platform_display_name || account?.platform_username || 'You'}</span>
+                                    <span className="text-gray-500 text-sm">@{account?.platform_username || 'username'}</span>
+                                    {threadTweets.length > 1 && (
+                                      <span className="text-xs text-gray-400">#{index + 1}</span>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Editable Content */}
+                                  <textarea
+                                    ref={el => textareaRefs.current[index] = el}
+                                    value={tweet.content}
+                                    onChange={(e) => handleTweetChange(index, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDown(e, index)}
+                                    onFocus={() => setFocusedTweetIndex(index)}
+                                    placeholder={index === 0 ? "What's happening?" : "Continue your thread..."}
+                                    className={`w-full text-gray-900 text-[15px] leading-relaxed resize-none focus:outline-none placeholder-gray-400 bg-transparent ${
+                                      threadTweets.length === 1 ? 'min-h-[280px]' : 'min-h-[100px]'
+                                    }`}
+                                    style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}
+                                  />
+                                  
+                                  {/* Per-tweet character count & remove button */}
+                                  <div className="flex items-center justify-between mt-2">
+                                    <div className="flex items-center gap-2">
+                                      {/* Small circular progress */}
+                                      <div className="relative w-5 h-5">
+                                        <svg className="w-5 h-5 -rotate-90">
+                                          <circle cx="10" cy="10" r="8" fill="none" stroke="#E5E7EB" strokeWidth="2" />
+                                          <circle
+                                            cx="10" cy="10" r="8" fill="none"
+                                            stroke={isOverLimit ? "#EF4444" : isNearLimit ? "#F59E0B" : "#10B981"}
+                                            strokeWidth="2"
+                                            strokeDasharray={50}
+                                            strokeDashoffset={50 - (50 * Math.min(tweet.content.length / maxLen, 1))}
+                                            strokeLinecap="round"
+                                          />
+                                        </svg>
+                                      </div>
+                                      <span className={`text-xs ${isOverLimit ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                                        {tweet.content.length}/{maxLen}
+                                      </span>
+                                    </div>
+                                    
+                                    {/* Remove button - only show if more than 1 tweet */}
+                                    {threadTweets.length > 1 && (
+                                      <button
+                                        onClick={() => handleRemoveTweet(index)}
+                                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition"
+                                      >
+                                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        
+                        {/* Add Tweet Button - shows at bottom of thread */}
+                        <button
+                          onClick={handleAddThreadTweet}
+                          className="flex items-center gap-2 ml-[52px] py-3 text-sm text-gray-400 hover:text-green-600 transition group"
+                        >
+                          <div className="w-8 h-8 rounded-full border-2 border-dashed border-gray-300 group-hover:border-green-500 flex items-center justify-center transition">
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                          </div>
+                          <span>Add to thread</span>
+                          <span className="text-xs text-gray-300">(⌘ + Enter)</span>
+                        </button>
                       </div>
                     </div>
-                  ) : generatedDraft && generatedDraft.length > 0 ? (
-                    <div className="flex-1 flex flex-col min-h-[250px]">
-                      <textarea
-                        value={generatedDraft}
-                        onChange={(e) => setGeneratedDraft(e.target.value)}
-                        className="flex-1 w-full min-h-[200px] p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400"
-                      />
-                      <div className="flex items-center justify-between mt-3">
-                        <div className="flex items-center gap-3">
-                          <span className={"text-xs " + (generatedDraft.length > (selectedPlatform === "x" ? 280 : 3000) ? "text-red-500" : "text-gray-500")}>
-                            {generatedDraft.length}/{selectedPlatform === "x" ? 280 : 3000}
-                          </span>
-                          <button onClick={handleRegenerate} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
-                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    
+                    {/* Fixed Bottom Action Bar */}
+                    <div className="border-t border-gray-100 px-6 py-4 bg-white">
+                      <div className="max-w-xl mx-auto flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {/* Thread count */}
+                          {threadTweets.length > 1 && (
+                            <span className="text-sm text-gray-500">
+                              <span className="font-medium text-gray-700">{threadTweets.length}</span> tweets in thread
+                            </span>
+                          )}
+                          
+                          {/* Regenerate */}
+                          <button onClick={handleRegenerate} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Regenerate">
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
                             </svg>
-                            Regenerate
                           </button>
                         </div>
+                        
+                        {/* Ship Button */}
                         <button
                           onClick={handleShip}
-                          className={"flex items-center gap-2 px-4 py-2 font-medium rounded-lg " +
+                          disabled={threadTweets.some(t => t.content.length > (selectedPlatform === "x" ? 280 : 3000)) || threadTweets.every(t => !t.content.trim())}
+                          className={"flex items-center gap-2 px-6 py-2.5 font-medium rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed " +
                             (selectedPlatform === "x" 
                               ? "bg-gray-900 text-white hover:bg-gray-800" 
                               : "bg-[#0A66C2] text-white hover:bg-[#004182]")}
                         >
+                          {threadTweets.length > 1 ? `Ship Thread (${threadTweets.length})` : `Ship to ${selectedPlatform === "x" ? "X" : "LinkedIn"}`}
                           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                           </svg>
-                          Ship to {selectedPlatform === "x" ? "X" : "LinkedIn"}
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
-                      <div className="text-center text-gray-400">
-                        <svg className="w-10 h-10 mx-auto mb-2 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  </div>
+                ) : (
+                  /* Empty State - No Commit Selected */
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="text-center max-w-sm">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path d="M12 3L14.5 8.5L20 11L14.5 13.5L12 19L9.5 13.5L4 11L9.5 8.5L12 3Z"/>
                         </svg>
-                        <p className="text-sm">Click a commit to generate</p>
                       </div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a commit</h3>
+                      <p className="text-sm text-gray-500">Click on any commit from the list to generate a social media post with AI.</p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
