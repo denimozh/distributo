@@ -153,15 +153,51 @@ async function processXPost(post, postResult) {
   // Build the tweet payload
   const tweetPayload = { text: mainContent };
   
-  // Add community_id if posting to a community
+  // ============================================
+  // COMMUNITY POSTING FIX
+  // The posts.community_id stores the database UUID,
+  // but we need the actual X community ID (numeric string)
+  // ============================================
+  let actualXCommunityId = null;
+  
   if (post.community_id) {
-    tweetPayload.community_id = post.community_id;
+    // Check if it's already a numeric X community ID (1-19 digits)
+    if (/^[0-9]{1,19}$/.test(post.community_id)) {
+      actualXCommunityId = post.community_id;
+      console.log(`[CRON] community_id is already in correct format: ${actualXCommunityId}`);
+    } else {
+      // It's a UUID - need to look up the actual X community ID
+      console.log(`[CRON] Looking up X community ID for UUID: ${post.community_id}`);
+      
+      const { data: community, error: communityError } = await supabase
+        .from('x_communities')
+        .select('community_id')
+        .eq('id', post.community_id)
+        .single();
+      
+      if (communityError) {
+        console.error(`[CRON] Failed to lookup community:`, communityError);
+      } else if (community?.community_id) {
+        actualXCommunityId = community.community_id;
+        console.log(`[CRON] Found X community ID: ${actualXCommunityId}`);
+      } else {
+        console.log(`[CRON] Community not found for UUID: ${post.community_id}`);
+      }
+    }
+  }
+  
+  // Add community_id if we have a valid one
+  if (actualXCommunityId && /^[0-9]{1,19}$/.test(actualXCommunityId)) {
+    tweetPayload.community_id = actualXCommunityId;
     // share_with_followers = false means ONLY post to community
     // share_with_followers = true means post to community AND your timeline
     tweetPayload.share_with_followers = post.share_with_followers ?? false;
-    console.log(`[CRON] Posting to community: ${post.community_id}, share_with_followers: ${tweetPayload.share_with_followers}`);
-    console.log(`[CRON] Full payload:`, JSON.stringify(tweetPayload, null, 2));
+    console.log(`[CRON] Posting to X community: ${actualXCommunityId}, share_with_followers: ${tweetPayload.share_with_followers}`);
+  } else if (post.community_id) {
+    console.log(`[CRON] WARNING: Invalid community_id format, posting to main timeline instead`);
   }
+  
+  console.log(`[CRON] Full payload:`, JSON.stringify(tweetPayload, null, 2));
 
   // Post main tweet (hook)
   console.log(`[CRON] Posting tweet: "${mainContent.substring(0, 50)}..."`);
@@ -198,12 +234,13 @@ async function processXPost(post, postResult) {
 
   // Build URL based on whether it's a community post
   let externalUrl = `https://x.com/${account.platform_username}/status/${tweetId}`;
-  if (post.community_id) {
-    externalUrl = `https://x.com/i/communities/${post.community_id}`;
+  if (actualXCommunityId) {
+    externalUrl = `https://x.com/i/communities/${actualXCommunityId}`;
   }
 
   postResult.tweet_id = tweetId;
   postResult.external_url = externalUrl;
+  postResult.community_id = actualXCommunityId;
 
   // ==========================================
   // POST PLUG (REPLY WITH LINK) IF EXISTS
