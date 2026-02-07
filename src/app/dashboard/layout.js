@@ -25,10 +25,9 @@ const QueueIcon = ({ className }) => (
   </svg>
 );
 
-const ReplyFinderIcon = ({ className }) => (
+const AutopilotIcon = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
   </svg>
 );
 
@@ -142,7 +141,7 @@ export default function DashboardLayout({ children }) {
       items: [
         { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
         { name: 'Content Queue', href: '/dashboard/queue', icon: QueueIcon },
-        { name: 'Reply Finder', href: '/dashboard/reply-finder', icon: ReplyFinderIcon },
+        { name: 'Autopilot', href: '/dashboard/autopilot', icon: AutopilotIcon },
       ]
     },
     { 
