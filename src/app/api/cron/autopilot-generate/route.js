@@ -27,7 +27,7 @@ export async function GET(request) {
     // Get all users with autopilot enabled
     const { data: autopilotUsers, error: usersError } = await supabase
       .from('profiles')
-      .select('id, product_name, product_description, target_audience, product_url, website_url, autopilot_enabled, autopilot_posts_per_day, autopilot_auto_approve')
+      .select('id, product_name, product_description, target_audience, product_url, autopilot_enabled, autopilot_posts_per_day, autopilot_auto_approve')
       .eq('autopilot_enabled', true);
 
     if (usersError) {
@@ -145,7 +145,7 @@ async function generateAutopilotContent(user) {
     ? recentCommits.slice(0, 5).map(c => `- "${c.message}" (+${c.additions || 0}/-${c.deletions || 0})`).join('\n')
     : 'No recent commits';
 
-  const productUrl = user.product_url || user.website_url || '';
+  const productUrl = user.product_url || '';
 
   const prompt = buildAutopilotPrompt({
     productName: user.product_name,

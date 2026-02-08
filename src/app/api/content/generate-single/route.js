@@ -111,7 +111,7 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    const productUrl = profile.product_url || profile.website_url || null;
+    const productUrl = profile.product_url || null;
     const config = CONTENT_CONFIGS[contentType] || CONTENT_CONFIGS.build_update;
 
     console.log(`[GENERATE-SINGLE] Creating ${config.name} post for ${profile.product_name}`);

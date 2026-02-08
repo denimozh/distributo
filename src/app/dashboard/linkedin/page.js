@@ -215,7 +215,7 @@ export default function LinkedInPipelinePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAFBFC] flex items-center justify-center">
-        <IconLoader className="w-8 h-8 text-[#0A66C2]" />
+        <IconLoader className="w-8 h-8 text-gray-500" />
       </div>
     );
   }
@@ -228,7 +228,7 @@ export default function LinkedInPipelinePage() {
 
   return (
     <div className="min-h-screen bg-[#FAFBFC]">
-      <div className=" mx-auto p-6">
+      <div className=" mx-auto p-6 lg:p-8">
         
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -237,8 +237,8 @@ export default function LinkedInPipelinePage() {
               <IconLinkedIn className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">LinkedIn Pipeline</h1>
-              <p className="text-sm text-gray-500">AI-powered professional content</p>
+              <h1 className="text-2xl font-semibold text-gray-900">LinkedIn</h1>
+              <p className="text-sm text-gray-500">Professional content from your posts</p>
             </div>
           </div>
 
@@ -262,26 +262,26 @@ export default function LinkedInPipelinePage() {
           <StatCard 
             icon={IconCalendar} 
             label="Scheduled" 
-            value={stats.scheduled}
+            value={stats.scheduled || '—'}
             color="blue"
           />
           <StatCard 
             icon={IconTrendingUp} 
             label="This Week" 
-            value={stats.thisWeek}
+            value={stats.thisWeek || '—'}
             color="green"
             badge={stats.thisWeek >= 3 ? `+${Math.round((stats.thisWeek / 7) * 100)}%` : null}
           />
           <StatCard 
             icon={IconHeart} 
             label="Avg Likes" 
-            value={stats.avgLikes}
+            value={stats.avgLikes || '—'}
             color="pink"
           />
           <StatCard 
             icon={IconMessageCircle} 
             label="Avg Comments" 
-            value={stats.avgComments}
+            value={stats.avgComments || '—'}
             color="purple"
           />
         </div>

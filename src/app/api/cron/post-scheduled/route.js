@@ -11,18 +11,17 @@ const supabase = createClient(
 export async function GET(request) {
   const startTime = Date.now();
   
-  // Check authorization (supports both Vercel cron and external services)
+  // Authorization — fail closed
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  
-  // In production, require auth
-  if (process.env.NODE_ENV === 'production' && cronSecret) {
-    const providedSecret = authHeader?.replace('Bearer ', '').trim();
-    
-    if (providedSecret !== cronSecret) {
-      console.log('[CRON] Unauthorized request');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (!cronSecret) {
+    console.error('[CRON] CRON_SECRET not configured');
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+  const providedSecret = authHeader?.replace('Bearer ', '').trim();
+  if (providedSecret !== cronSecret) {
+    console.log('[CRON] Unauthorized request');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

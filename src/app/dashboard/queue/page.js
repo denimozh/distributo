@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/Toast";
+// NOTE: If useToast throws "must be used within ToastProvider", 
+// change above to: import { useToast } from "../layout";
 
 // Icons
 const IconCalendar = ({ className }) => (
@@ -1115,7 +1117,7 @@ function StatsBanner({ stats }) {
     { label: 'Pending', value: stats.pending, color: 'text-amber-600' },
     { label: 'Scheduled', value: stats.scheduled, color: 'text-blue-600' },
     { label: 'Posted', value: stats.posted, color: 'text-emerald-600' },
-    { label: 'Failed', value: stats.failed, color: 'text-red-600' },
+    { label: 'Needs Attention', value: stats.failed || '—', color: 'text-amber-600' },
   ];
 
   return (
@@ -1123,7 +1125,7 @@ function StatsBanner({ stats }) {
       {items.map((stat) => (
         <div key={stat.label} className="bg-white rounded-2xl border border-gray-200 p-4">
           <div className="text-xs text-gray-500 mb-1">{stat.label}</div>
-          <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
+          <div className={`text-2xl font-semibold ${stat.color}`}>{stat.value}</div>
         </div>
       ))}
     </div>

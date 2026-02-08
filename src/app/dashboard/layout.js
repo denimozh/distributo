@@ -56,6 +56,12 @@ const IntegrationsIcon = ({ className }) => (
   </svg>
 );
 
+const ImpactIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </svg>
+);
+
 const PreferencesIcon = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="3" />
@@ -101,6 +107,7 @@ export default function DashboardLayout({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -137,33 +144,26 @@ export default function DashboardLayout({ children }) {
 
   const navigation = [
     { 
-      section: 'MAIN MENU', 
+      section: 'COMMAND CENTER', 
       items: [
-        { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
+        { name: 'Mission Control', href: '/dashboard', icon: DashboardIcon },
         { name: 'Content Queue', href: '/dashboard/queue', icon: QueueIcon },
-        { name: 'Autopilot', href: '/dashboard/autopilot', icon: AutopilotIcon },
+        { name: 'Insights', href: '/dashboard/insights', icon: ImpactIcon },
       ]
     },
     { 
-      section: 'PIPELINES', 
+      section: 'CHANNELS', 
       items: [
         { name: 'X / Twitter', href: '/dashboard/x', icon: XIcon },
         { name: 'LinkedIn', href: '/dashboard/linkedin', icon: LinkedInIcon },
-        { name: 'GitHub Autopilot', href: '/dashboard/github', icon: GitHubIcon },
       ]
     },
     { 
-      section: 'SETTINGS', 
+      section: 'ENGINE', 
       items: [
+        { name: 'GitHub', href: '/dashboard/github', icon: GitHubIcon },
         { name: 'Integrations', href: '/dashboard/settings/integrations', icon: IntegrationsIcon },
         { name: 'Preferences', href: '/dashboard/preferences', icon: PreferencesIcon },
-      ]
-    },
-    { 
-      section: 'SUPPORT', 
-      items: [
-        { name: 'Help Center', href: '/help', icon: HelpIcon },
-        { name: 'Documentation', href: '/docs', icon: DocsIcon },
       ]
     },
   ];
@@ -179,14 +179,43 @@ export default function DashboardLayout({ children }) {
   return (
     <ToastProvider>
       <div className="min-h-screen bg-[#FAFBFC] flex">
-        {/* Sidebar */}
-        <aside className="fixed inset-y-0 left-0 w-60 bg-white border-r border-gray-200 flex flex-col z-40">
-          {/* Logo */}
-          <div className="h-16 flex items-center gap-3 px-5 border-b border-gray-100">
-            <div className="w-8 h-8 rounded-lg bg-gray-900 flex items-center justify-center">
-              <BoltIcon className="w-4 h-4 text-white" />
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 bg-black/30 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        )}
+
+        {/* Mobile hamburger */}
+        <div className="fixed top-0 left-0 right-0 h-14 bg-white border-b border-gray-200 flex items-center px-4 z-20 lg:hidden">
+          <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-1 text-gray-600 hover:text-gray-900">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="flex items-center gap-2 ml-3">
+            <div className="w-6 h-6 rounded-md bg-gray-900 flex items-center justify-center">
+              <BoltIcon className="w-3 h-3 text-white" />
             </div>
-            <span className="font-semibold text-gray-900">Distributo</span>
+            <span className="font-semibold text-gray-900 text-sm">Distributo</span>
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <aside className={`fixed inset-y-0 left-0 w-60 bg-white border-r border-gray-200 flex flex-col z-40 transition-transform duration-200 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } lg:translate-x-0`}>
+          {/* Logo */}
+          <div className="h-16 flex items-center justify-between gap-3 px-5 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gray-900 flex items-center justify-center">
+                <BoltIcon className="w-4 h-4 text-white" />
+              </div>
+              <span className="font-semibold text-gray-900">Distributo</span>
+            </div>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 lg:hidden">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           {/* Navigation */}
@@ -203,6 +232,7 @@ export default function DashboardLayout({ children }) {
                       <Link
                         key={item.name}
                         href={item.href}
+                        onClick={() => setSidebarOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                           isActive
                             ? 'bg-gray-100 text-gray-900 font-medium'
@@ -245,7 +275,7 @@ export default function DashboardLayout({ children }) {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 ml-60">
+        <main className="flex-1 lg:ml-60 pt-14 lg:pt-0">
           {children}
         </main>
       </div>

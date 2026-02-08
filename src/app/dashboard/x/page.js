@@ -386,7 +386,7 @@ export default function XPipelinePage() {
     const { data: scheduled } = await supabase.from('posts').select('*').eq('user_id', user.id).eq('platform', 'x').eq('status', 'scheduled').order('scheduled_at', { ascending: true }).limit(5);
 
     setStats({
-      postsToday: 3,
+      postsToday: (postedPosts || []).length,
       weeklyReach: postedPosts?.reduce((s, p) => s + (p.impressions_count || 0), 0) || 0,
       avgLikes: postedPosts?.length ? Math.round(postedPosts.reduce((s, p) => s + (p.likes_count || 0), 0) / postedPosts.length) : 0,
       avgReplies: postedPosts?.length ? Math.round(postedPosts.reduce((s, p) => s + (p.comments_count || 0), 0) / postedPosts.length) : 0,
@@ -398,14 +398,14 @@ export default function XPipelinePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAFBFC] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#FAFBFC]">
-      <div className="p-8">
+      <div className="p-6 lg:p-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
@@ -413,7 +413,7 @@ export default function XPipelinePage() {
               <IconTwitterX className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">X Pipeline</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">X / Twitter</h1>
               <p className="text-sm text-gray-500">Algorithm-optimized posting</p>
             </div>
           </div>
@@ -447,12 +447,19 @@ export default function XPipelinePage() {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <StatCard label="Posts Today" value={`${stats.postsToday}/10`} icon={IconCalendar} color="blue" />
-          <StatCard label="Weekly Reach" value={stats.weeklyReach.toLocaleString()} icon={IconEye} color="purple" trend={12} />
-          <StatCard label="Avg Likes" value={stats.avgLikes} icon={IconHeart} color="amber" />
-          <StatCard label="Avg Replies" value={stats.avgReplies} icon={IconMessageCircle} color="emerald" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <StatCard label="Posts Today" value={stats.postsToday > 0 ? `${stats.postsToday}/10` : '—'} icon={IconCalendar} color="blue" />
+          <StatCard label="Weekly Reach" value={stats.weeklyReach > 0 ? stats.weeklyReach.toLocaleString() : '—'} icon={IconEye} color="purple" />
+          <StatCard label="Avg Likes" value={stats.avgLikes > 0 ? stats.avgLikes : '—'} icon={IconHeart} color="amber" />
+          <StatCard label="Avg Replies" value={stats.avgReplies > 0 ? stats.avgReplies : '—'} icon={IconMessageCircle} color="emerald" />
         </div>
+
+        {/* Engagement notice when no data */}
+        {stats.weeklyReach === 0 && stats.avgLikes === 0 && (
+          <div className="mb-8 p-4 bg-gray-50 border border-gray-200 rounded-2xl text-center">
+            <p className="text-sm text-gray-500">Engagement data appears after your first week of posting</p>
+          </div>
+        )}
 
         {/* Main Content */}
         <div className="grid lg:grid-cols-3 gap-6">

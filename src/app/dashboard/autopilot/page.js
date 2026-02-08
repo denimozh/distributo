@@ -182,7 +182,7 @@ function AutopilotStatusBar({ enabled, status, nextAction, runway, onToggle, loa
               {loading ? (
                 <IconLoader className="w-3 h-3 text-gray-400" />
               ) : (
-                <IconMoon className={`w-3 h-3 ${enabled ? 'text-purple-500' : 'text-gray-400'}`} />
+                <IconMoon className={`w-3 h-3 ${enabled ? 'text-gray-500' : 'text-gray-400'}`} />
               )}
             </div>
           </button>
@@ -336,7 +336,7 @@ function PostReviewCard({ post, onApprove, onEdit, onDiscard, onRegenerate, onFe
         {/* Visual Concept */}
         {post.metadata?.visual_concept && (
           <div className="pt-3 border-t border-gray-100">
-            <div className="text-[10px] font-semibold text-purple-600 uppercase tracking-wide mb-1">Visual Suggestion</div>
+            <div className="text-[10px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Visual Suggestion</div>
             <p className="text-xs text-gray-500 italic">
               📸 {post.metadata.visual_concept}
             </p>
@@ -351,7 +351,7 @@ function PostReviewCard({ post, onApprove, onEdit, onDiscard, onRegenerate, onFe
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
             placeholder="What could be improved? (e.g., 'Too formal', 'Add more emotion', 'Wrong tone')"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 resize-none"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900/20 focus:border-gray-400 resize-none"
             rows={2}
           />
           <div className="flex justify-end gap-2 mt-2">
@@ -367,7 +367,7 @@ function PostReviewCard({ post, onApprove, onEdit, onDiscard, onRegenerate, onFe
                 setShowFeedback(false);
                 setFeedback('');
               }}
-              className="px-3 py-1.5 text-xs bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+              className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-800"
             >
               Submit Feedback
             </button>
@@ -380,7 +380,7 @@ function PostReviewCard({ post, onApprove, onEdit, onDiscard, onRegenerate, onFe
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowFeedback(!showFeedback)}
-            className="p-2 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             title="Provide feedback"
           >
             <IconThumbsDown className="w-4 h-4" />
@@ -507,7 +507,7 @@ function ContextFeed({ commits, loading }) {
       {commits.length > 0 && (
         <Link
           href="/dashboard/github"
-          className="block p-3 text-center text-xs text-purple-600 hover:bg-purple-50 transition-colors border-t border-gray-100"
+          className="block p-3 text-center text-xs text-gray-500 hover:bg-gray-100 transition-colors border-t border-gray-100"
         >
           View all activity →
         </Link>
@@ -827,23 +827,23 @@ export default function AutopilotPage() {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
-        <IconLoader className="w-8 h-8 text-purple-500" />
+        <IconLoader className="w-8 h-8 text-gray-500" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Autopilot Growth Engine</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Autopilot Growth Engine</h1>
           <p className="text-sm text-gray-500">Your strategic approval center</p>
         </div>
         <button
           onClick={handleGenerate}
           disabled={generating}
-          className="flex items-center gap-2 px-5 py-2.5 bg-purple-500 hover:bg-purple-600 text-white font-medium rounded-xl transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-xl transition-colors disabled:opacity-50"
         >
           {generating ? (
             <IconLoader className="w-4 h-4" />
@@ -903,7 +903,7 @@ export default function AutopilotPage() {
             </h2>
             <Link
               href="/dashboard/content-queue"
-              className="text-xs text-purple-600 hover:text-purple-700"
+              className="text-xs text-gray-600 hover:text-gray-700"
             >
               View all posts →
             </Link>
@@ -921,7 +921,7 @@ export default function AutopilotPage() {
               <button
                 onClick={handleGenerate}
                 disabled={generating}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-600 bg-purple-50 rounded-xl hover:bg-purple-100 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
               >
                 <IconSparkles className="w-4 h-4" />
                 Generate more content

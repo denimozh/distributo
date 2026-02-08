@@ -10,15 +10,16 @@ const supabase = createClient(
 export async function GET(request) {
   const startTime = Date.now();
 
-  // Check authorization
+  // Authorization — fail closed
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-
-  if (process.env.NODE_ENV === 'production') {
-    const providedSecret = authHeader?.replace('Bearer ', '').trim();
-    if (!cronSecret || providedSecret !== cronSecret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (!cronSecret) {
+    console.error('[REFRESH] CRON_SECRET not configured');
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+  const providedSecret = authHeader?.replace('Bearer ', '').trim();
+  if (providedSecret !== cronSecret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

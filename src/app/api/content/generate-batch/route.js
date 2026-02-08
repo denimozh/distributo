@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
+import { rateLimit } from '@/lib/rate-limit';
+import { createTrackedLink } from '@/lib/short-links';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -121,6 +123,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 });
     }
 
+    // Rate limit: 3 generations per minute
+    const limit = rateLimit(`generate:${userId}`, 3, 60000);
+    if (limit.limited) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+    }
+
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 });
     }
@@ -139,7 +147,18 @@ export async function POST(request) {
 
     const totalPosts = postsPerDay * days;
     
-    console.log(`[GENERATE] Creating ${totalPosts} SuperX-killer posts for ${userContext.profile.product_name}`);
+    // Get content intelligence if available
+    let contentInsights = null;
+    try {
+      const { data: insights } = await supabase
+        .from('content_insights')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      contentInsights = insights;
+    } catch {}
+    
+    console.log(`[GENERATE] Creating ${totalPosts} posts for ${userContext.profile.product_name}${contentInsights ? ` (with ${contentInsights.posts_analyzed} posts of intelligence)` : ''}`);
 
     // ========================================
     // STEP 2: GENERATE OPTIMIZED CONTENT
@@ -242,7 +261,7 @@ async function gatherUserContext(userId) {
   // Get user's writing style from top posts
   const writingDNA = analyzeWritingStyle(topPosts);
 
-  const productUrl = profile.product_url || profile.website_url || null;
+  const productUrl = profile.product_url || null;
 
   return {
     profile,
@@ -328,6 +347,7 @@ async function generateSuperXKillerContent({ userContext, postsPerDay, days, tot
     postsPerDay,
     days,
     hookLibrary: HOOK_LIBRARY,
+    contentInsights: null, // Will be passed from caller
   });
 
   const response = await anthropic.messages.create({
@@ -382,15 +402,16 @@ async function generateSuperXKillerContent({ userContext, postsPerDay, days, tot
     
     return {
       hook_content: cleanHook,
-      plug_content: cleanPlug,
+      plug_content: post.has_plug === false ? null : cleanPlug,
       content_type: post.type || post.growth_pillar || 'build_in_public',
-      visual_concept: post.visual_concept || null,
+      visual_concept: null,
       alignment_score: alignmentScore,
       growth_pillar: post.growth_pillar || 'authority',
       communityId: post.communityId || null,
       day: post.day || Math.ceil((index + 1) / postsPerDay),
-      is_thread: true,
-      has_plug: true,
+      is_thread: post.has_plug !== false,
+      has_plug: post.has_plug !== false,
+      metadata_format: post.format || 'mixed',
     };
   });
 }
@@ -399,13 +420,12 @@ async function generateSuperXKillerContent({ userContext, postsPerDay, days, tot
 // BUILD VIRAL ENGINE PROMPT
 // The "Kill Shot" refactor - Constraint-based framework, not instruction list
 // ============================================================================
-function buildSuperXPrompt({ profile, productUrl, communities, recentCommits, topPosts, writingDNA, totalPosts, postsPerDay, days, hookLibrary }) {
+function buildSuperXPrompt({ profile, productUrl, communities, recentCommits, topPosts, writingDNA, totalPosts, postsPerDay, days, hookLibrary, contentInsights }) {
   
   const communityList = communities.length > 0 
     ? communities.map(c => `- "${c.name}" (ID: ${c.community_id})`).join('\n')
     : 'None';
 
-  // Extract SPECIFIC details from commits for emotional storytelling
   const commitStories = recentCommits.slice(0, 5).map(c => {
     const msg = c.message || '';
     const files = c.files_changed || 0;
@@ -416,182 +436,146 @@ function buildSuperXPrompt({ profile, productUrl, communities, recentCommits, to
 
   const topPostsContext = topPosts.length > 0
     ? topPosts.slice(0, 3).map(p => {
-        const content = (p.hook_content || p.content || '').slice(0, 80);
+        const content = (p.hook_content || p.content || '').slice(0, 100);
         return `"${content}..." (${p.comments_count || 0} replies)`;
       }).join('\n')
     : 'No history';
 
-  return `You are not a social media manager. You are an OBSESSED SOLO FOUNDER who writes like you're texting your best friend at 2am after a breakthrough (or breakdown).
+  const insightsBlock = contentInsights && contentInsights.posts_analyzed >= 5 ? `
+## WHAT WORKS FOR YOUR AUDIENCE (${contentInsights.posts_analyzed} posts analyzed)
+- Best format: ${contentInsights.best_format}
+- Best posting time: ${contentInsights.best_posting_hour}:00
+- Top hooks: ${(contentInsights.top_hook_patterns || []).slice(0, 3).map(h => `"${h.hook}"`).join(', ')}
+- Avg impressions: ${contentInsights.avg_impressions}
+Generate ~40% of posts in ${contentInsights.best_format} format. Weight the rest across other formats.
+` : '';
 
-Your voice: Raw. Unfiltered. Slightly unhinged. Like you haven't slept in 3 days but you HAVE to share this.
+  return `You are a solo founder who writes about building in public. You're not a content creator — you're someone who happens to share what they're building, learning, and struggling with.
 
----
-
-## 🎯 THE MISSION
-
-Generate ${totalPosts} tweets that feel like confessions, not content.
-
----
-
-## ⚡ THE BROETRY STRUCTURE (MANDATORY - NO EXCEPTIONS)
-
-Every hook MUST follow the 1-1-3-1 pattern:
-
-Line 1: THE PATTERN INTERRUPT (negative hook, confession, or hot take)
-
-[blank line]
-
-Line 3-5: THE VALUE (2-3 short punchy lines, max 8 words each)
-
-[blank line]
-
-Line 7: THE PIVOT (question, challenge, or incomplete thought)
-
-Example:
-"I almost mass-deleted my codebase today.
-
-The auth flow was broken.
-4 hours of debugging.
-The fix? One missing await.
-
-Why does nobody warn you about async hell?"
+Your writing should feel like a text to a friend, not a LinkedIn post. Sometimes you're excited, sometimes frustrated, sometimes just sharing something interesting. You're a real person with range.
 
 ---
 
-## 🔴 THE NEGATIVE HOOK RULE (ENFORCED)
+## WHO YOU ARE
 
-Your FIRST LINE must be ONE of these:
-
-1. **A confession**: "I've been lying to myself about..."
-2. **A failure**: "I broke production today."  
-3. **A challenge to common belief**: "Everyone's wrong about..."
-4. **A vulnerable admission**: "I almost gave up on..."
-5. **A frustration**: "Nothing pisses me off more than..."
-6. **A regret**: "I wasted 6 months on..."
-
-❌ BANNED first lines:
-- "Here's what I learned..."
-- "I'm excited to share..."
-- "Just shipped..."
-- "Pro tip:"
-- "Thread 🧵"
-- Anything that sounds like a LinkedIn post
+Building: ${profile.product_name}
+What it does: ${profile.product_description}
+URL: ${productUrl || 'Not shared publicly yet'}
+Audience: ${profile.target_audience || 'Developers and indie hackers'}
 
 ---
 
-## 🧠 THE FACT-TO-FEELING BRIDGE
+## REAL EXAMPLES OF GREAT INDIE HACKER TWEETS
 
-You have REAL GitHub commits. Don't describe them. FEEL them.
+Study these. Match the ENERGY, not the structure. Never copy.
 
-**The Commits:**
+1. "The auth bug that took 4 hours was a missing await. I'm going to bed."
+2. "Someone asked how I market my SaaS. I showed them my git log."
+3. "94 users. 3 paying. 1 churned because I didn't have dark mode. Priorities."
+4. "Shipped the LinkedIn integration. Immediately broke the X integration. Classic."
+5. "My girlfriend asked what I do all day. I showed her my Supabase dashboard. She said 'that's a lot of green.'"
+6. "6 months of building. 0 revenue. But 12 people DMed me saying they can't live without it. That's enough for now."
+7. "The moment you realize your 'quick fix' touched 47 files"
+8. "Accidentally pushed to prod at 11pm. Fixed it by midnight. Nobody noticed. Best deployment ever."
+9. "I used to think marketing was optional for good products. Then I built a good product."
+10. "Every time I say 'this will take 30 minutes' multiply by 6. That's the real estimate."
+11. "Refactored my entire auth flow. Went from 800 lines to 200. Deleted code > written code."
+12. "Today I mass-deleted a feature I spent 3 weeks building. The product is better now."
+13. "We hit 500 users today. 490 of them came from one Reddit comment."
+14. "The best marketing channel I've found? Being genuine about the struggle."
+15. "Asked 10 users what feature they wanted most. 8 said 'make it faster.' Nobody asked for the 3 features I was building."
+
+---
+
+## FORMAT VARIETY (CRITICAL — do NOT use the same format twice in a row)
+
+Pick the best format for each post's content:
+
+**Broetry (30%)** — 1 sentence per line, whitespace between sections
+**One-liner (20%)** — Single punchy sentence, max 140 chars. The tweet IS the punchline.
+**Narrative (20%)** — 2-3 short paragraphs telling a micro-story
+**Question (15%)** — Opens with a genuine question, may add your take
+**Mini-list (15%)** — 3-5 short items with a setup line
+
+---
+
+## HOOK VARIETY (do NOT start every post negatively)
+
+~40% Negative/vulnerable: confessions, failures, frustrations
+~25% Observational: funny, relatable truths about building
+~20% Technical wins: shipped something, learned something, specific insight  
+~15% Casual/human: random thoughts, humor, no agenda
+
+---
+
+## YOUR RECENT COMMITS (use these for authentic stories)
+
 ${commitStories}
 
-Transform these into EMOTIONAL stories:
-
-❌ WRONG: "Pushed 12 commits today refactoring the auth module"
-✅ RIGHT: "I just mass-deleted code I spent 3 weeks writing.
-
-It felt like throwing away money.
-But the new version? 
-200 lines instead of 800.
-
-Sometimes destruction is progress."
+Transform commits into human stories. Don't describe the code. Tell what it FELT like.
 
 ---
 
-## 👤 WHO YOU ARE
-
-**Building:** ${profile.product_name}
-**What it does:** ${profile.product_description}
-**URL:** ${productUrl || 'Not sharing yet - building in stealth'}
-**Your people:** ${profile.target_audience || 'Founders who are tired of the grind'}
-
-Write as THIS person. Not as their assistant.
-
----
-
-## 📸 VISUAL INTENT (EVERY POST)
-
-X posts with visuals get 2-3x reach. For EACH post, specify:
-
-- **code_screenshot**: A specific file or function to screenshot
-- **before_after**: UI or code comparison
-- **terminal**: Command output or error message
-- **stats**: Analytics or metrics dashboard
-- **sketch**: Quick wireframe or diagram
-
-Be SPECIFIC: "Screenshot of the handleAuth function showing the race condition fix"
-
----
-
-## 🔗 THE PLUG (REPLY TWEET)
-
-After the hook, you'll post a reply with the link. This should:
-- Continue the story naturally
-- Include ${productUrl || 'product mention'} without being salesy
-- Feel like "oh btw, this is what I'm building"
-
-Example plug:
-"This is exactly why I'm building ${profile.product_name}.
-
-Because nobody should debug their marketing strategy at 2am.
-
-${productUrl || 'Check it out'}"
-
----
-
-## 🏆 WHAT'S WORKED BEFORE
+## WHAT'S WORKED BEFORE
 
 ${topPostsContext}
 
+${insightsBlock}
+
 ---
 
-## 🎪 COMMUNITIES (30% of posts)
+## THE PLUG (reply tweet — NOT every post needs one)
+
+~85% of posts get a plug reply. ~15% should be pure brand-building with NO product mention.
+
+5 plug styles (vary these):
+1. **Direct drop**: Just the URL, nothing else
+2. **Soft mention**: "Building something for this → ${productUrl || 'link'}"
+3. **Value plug**: "I wrote about this in detail: ${productUrl || 'link'}"  
+4. **Social proof**: "X devs already using this: ${productUrl || 'link'}"
+5. **Story continuation**: Naturally continue the hook's story, mention product organically
+
+---
+
+## COMMUNITIES (30% of posts target these)
 
 ${communityList}
 
 ---
 
-## 📊 MIX FOR ${totalPosts} POSTS
+## HARD RULES
 
-- 30% Confessions/Failures (highest engagement)
-- 25% Hot Takes/Challenges (controversy drives replies)
-- 20% Emotional Build-in-Public (from real commits)
-- 15% Frustrated Observations (relatable anger)
-- 10% Vulnerable Questions (invites support)
-
----
-
-## ⛔ HARD CONSTRAINTS
-
-1. **First line = Negative/Confession/Challenge** - NO EXCEPTIONS
-2. **Broetry format** - 1 sentence per line, lots of whitespace
-3. **Hook ≤ 280 chars** - Count carefully
-4. **Plug ≤ 280 chars** - Include the URL
-5. **No corporate speak** - Write like a human, not a brand
-6. **Specific > Generic** - "auth flow" not "the code"
-7. **Use \\n for line breaks** - Not literal newlines
+1. Hook ≤ 280 chars. Count carefully.
+2. Plug ≤ 280 chars. Include the URL when plugging.
+3. Use \\n for line breaks.
+4. No hashtags. No "Thread 🧵". No "Here's what I learned".
+5. No corporate speak. Write like a human.
+6. Be specific: "auth flow" not "the code", "Supabase" not "my database"
+7. Max 1-2 emojis per post, only if natural. Many posts should have zero.
+8. VARY the format. If post N is broetry, post N+1 must NOT be broetry.
+9. Some posts should be SHORT — one-liners are powerful.
 
 ---
 
-## 📤 OUTPUT FORMAT
+## OUTPUT
 
 Return ONLY a JSON array. No markdown. No explanation.
 
 [
   {
-    "hook": "First line is negative/confession\\n\\nShort line.\\nAnother short line.\\nThird line.\\n\\nEnding question or pivot?",
-    "plug": "Natural continuation...\\n\\n${productUrl || 'Product mention'}\\n\\nSoft CTA",
-    "type": "confession|failure|hot_take|frustration|vulnerable|challenge",
-    "visual_concept": "SPECIFIC visual description - e.g., 'Screenshot of the error log showing the timeout'",
-    "growth_pillar": "relatability|controversy|authority|vulnerability",
-    "alignment_score": 90,
+    "hook": "The tweet content with \\n for line breaks",
+    "plug": "Reply content with ${productUrl || 'product link'}\\n\\nSoft CTA",
+    "type": "confession|observation|technical|question|humor|story",
+    "format": "broetry|one_liner|narrative|question|mini_list",
+    "growth_pillar": "relatability|authority|vulnerability|humor",
+    "alignment_score": 85,
+    "has_plug": true,
     "communityId": null,
     "day": 1
   }
 ]
 
-Remember: You're an obsessed founder, not a content creator. Write like it.`;
+Generate ${totalPosts} posts across ${days} days. Make each one feel like a different person wrote it — same voice, different energy.`;
 }
 
 // ============================================================================
@@ -738,7 +722,7 @@ async function savePosts(userId, posts, scheduleTimes, communities) {
         metadata: {
           content_type: post.content_type,
           growth_pillar: post.growth_pillar,
-          visual_concept: post.visual_concept,
+          format: post.metadata_format || 'mixed',
           alignment_score: post.alignment_score,
         },
       })
@@ -748,6 +732,20 @@ async function savePosts(userId, posts, scheduleTimes, communities) {
     if (saveError) {
       console.error('[SAVE] Error saving post:', saveError);
     } else if (savedPost) {
+      // Create tracked link for the plug if we have a product URL
+      const productUrl = post.plug_content?.match(/https?:\/\/[^\s]+/)?.[0];
+      if (productUrl && savedPost.id) {
+        try {
+          const trackedUrl = await createTrackedLink(productUrl, savedPost.id, userId);
+          if (trackedUrl && trackedUrl !== productUrl) {
+            const updatedPlug = savedPost.plug_content.replace(productUrl, trackedUrl);
+            await supabase.from('posts').update({ plug_content: updatedPlug }).eq('id', savedPost.id);
+            savedPost.plug_content = updatedPlug;
+          }
+        } catch (e) {
+          console.error('[SAVE] Tracked link error:', e.message);
+        }
+      }
       savedPosts.push(savedPost);
     }
   }

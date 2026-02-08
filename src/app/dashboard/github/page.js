@@ -338,7 +338,7 @@ export default function GitHubAutopilotPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAFBFC] p-6">
+    <div className="min-h-screen bg-[#FAFBFC] p-6 lg:p-8">
       <div className="max-w-[1600px] mx-auto">
         
         {/* Header */}
@@ -350,7 +350,7 @@ export default function GitHubAutopilotPage() {
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">GitHub Autopilot</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">GitHub</h1>
               <p className="text-sm text-gray-500">Push code → Ship content</p>
             </div>
           </div>
