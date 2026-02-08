@@ -9,13 +9,13 @@ export const metadata = {
   creator: 'Distributo',
   publisher: 'Distributo',
   robots: 'index, follow',
-  metadataBase: new URL('https://distributo.io'),
+  metadataBase: new URL('https://distributo.dev'),
   
   // Open Graph
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://distributo.io',
+    url: 'https://distributo.dev',
     siteName: 'Distributo',
     title: 'Distributo | Automate Your Marketing. Scale Without the Agency.',
     description: 'AI-powered marketing automation for Reddit, X, and LinkedIn. Grow your audience on autopilot while you focus on building.',
