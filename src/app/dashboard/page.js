@@ -104,16 +104,18 @@ function StatusBar({ isActive, nextPostTime, runway, connections, onToggle, togg
       <div className="px-5 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center gap-6 text-xs text-gray-500">
         <div className="flex items-center gap-1.5">
           <IconBarChart className="w-3 h-3 text-gray-400" />
-          <span><span className="font-semibold text-gray-700">{totalPosted}</span> posts total</span>
+          <span><span className="font-semibold text-gray-700">{totalPosted}</span> posts published</span>
         </div>
         <div className="flex items-center gap-1.5">
           <IconMousePointer className="w-3 h-3 text-gray-400" />
           <span><span className="font-semibold text-gray-700">{totalClicks}</span> link clicks</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <IconActivity className="w-3 h-3 text-gray-400" />
-          <span>Cron runs every 6h</span>
-        </div>
+        {totalPosted > 0 && (
+          <div className="flex items-center gap-1.5">
+            <IconClock className="w-3 h-3 text-gray-400" />
+            <span>~<span className="font-semibold text-gray-700">{Math.round(totalPosted * 0.5 * 10) / 10}h</span> saved</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -197,6 +199,52 @@ function ContentIntelligence({ insights, postsAnalyzed }) {
             <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Top Hook</span>
             <p className="text-xs text-gray-700 mt-1 italic leading-relaxed">"{insights.top_hook_patterns[0].hook}"</p>
             <p className="text-[10px] text-emerald-600 mt-0.5">Score: {insights.top_hook_patterns[0].score}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// WHILE YOU WERE CODING — automation proof card
+// ==========================================
+function WhileYouWereCoding({ autopilotStats }) {
+  if (!autopilotStats || autopilotStats.postsPublished === 0) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl overflow-hidden mb-6">
+      <div className="px-6 py-5">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-emerald-400 text-xs font-semibold uppercase tracking-wider">While You Were Coding</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <div className="text-2xl font-bold text-white">{autopilotStats.postsPublished}</div>
+            <div className="text-xs text-gray-400 mt-0.5">posts published</div>
+          </div>
+          {autopilotStats.totalImpressions > 0 && (
+            <div>
+              <div className="text-2xl font-bold text-white">{autopilotStats.totalImpressions.toLocaleString()}</div>
+              <div className="text-xs text-gray-400 mt-0.5">impressions</div>
+            </div>
+          )}
+          <div>
+            <div className="text-2xl font-bold text-white">{autopilotStats.totalClicks}</div>
+            <div className="text-xs text-gray-400 mt-0.5">link clicks</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold text-emerald-400">~{autopilotStats.hoursSaved}h</div>
+            <div className="text-xs text-gray-400 mt-0.5">time saved</div>
+          </div>
+        </div>
+        {autopilotStats.daysContinuous > 1 && (
+          <div className="mt-4 pt-4 border-t border-gray-700/50">
+            <p className="text-sm text-gray-300">
+              Your autopilot ran for <span className="text-white font-semibold">{autopilotStats.daysContinuous} days</span> without intervention.
+              {autopilotStats.burntOutMode && <span className="text-emerald-400"> Content kept going while you were heads-down building.</span>}
+            </p>
           </div>
         )}
       </div>
@@ -458,6 +506,7 @@ export default function MissionControlPage() {
   const [autopilotToggling, setAutopilotToggling] = useState(false);
   const [contentInsights, setContentInsights] = useState(null);
   const [postsWithEngagement, setPostsWithEngagement] = useState(0);
+  const [autopilotStats, setAutopilotStats] = useState(null);
 
   const supabase = createClient();
   const { addToast } = useToast();
@@ -502,6 +551,35 @@ export default function MissionControlPage() {
     // Count posts with engagement data for intelligence
     const withEngagement = posted.filter(p => p.engagement_score && p.engagement_score > 0).length;
     setPostsWithEngagement(withEngagement);
+
+    // Calculate "While You Were Coding" autopilot stats
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentAutopilotPosts = posted.filter(p =>
+      (p.source === 'autopilot' || p.source === 'github' || p.source === 'github_release' || p.source === 'github_pr' || p.source === 'github_batch') &&
+      new Date(p.posted_at) >= sevenDaysAgo
+    );
+
+    if (recentAutopilotPosts.length > 0) {
+      const totalImpressions = recentAutopilotPosts.reduce((sum, p) => sum + (p.impressions_count || 0), 0);
+      const autopilotClicks = recentAutopilotPosts.reduce((sum, p) => sum + (p.clicks_count || 0), 0);
+      const hoursSaved = Math.round(recentAutopilotPosts.length * 0.5 * 10) / 10;
+      const hasBurntOut = recentAutopilotPosts.some(p => p.metadata?.burnt_out_mode);
+
+      // Calculate continuous days
+      const postDates = recentAutopilotPosts.map(p => new Date(p.posted_at).toDateString());
+      const uniqueDays = [...new Set(postDates)].length;
+
+      setAutopilotStats({
+        postsPublished: recentAutopilotPosts.length,
+        totalImpressions,
+        totalClicks: autopilotClicks,
+        hoursSaved,
+        daysContinuous: uniqueDays,
+        burntOutMode: hasBurntOut,
+      });
+    } else {
+      setAutopilotStats(null);
+    }
 
     // Fetch content insights
     const { data: insights } = await supabase.from('content_insights').select('*').eq('user_id', user.id).single();
@@ -600,6 +678,9 @@ export default function MissionControlPage() {
           />
         </div>
 
+        {/* While You Were Coding — automation proof */}
+        <WhileYouWereCoding autopilotStats={autopilotStats} />
+
         {/* Main grid: Action Deck (left) + Signal Feed + Intelligence (right) */}
         <div className="grid lg:grid-cols-5 gap-6 mb-6">
           <div className="lg:col-span-3">
@@ -613,12 +694,22 @@ export default function MissionControlPage() {
             {pendingPosts.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-4"><IconCheck className="w-7 h-7 text-emerald-600" /></div>
-                <h3 className="text-gray-900 font-medium mb-1">All caught up!</h3>
-                <p className="text-sm text-gray-500 mb-1">{stats.postedThisWeek > 0 ? `${stats.postedThisWeek} posts went out this week.` : 'No pending posts to review.'}</p>
-                {scheduledPosts[0]?.scheduled_at && <p className="text-xs text-gray-400 mb-5">Next: {new Date(scheduledPosts[0].scheduled_at).toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</p>}
-                <button onClick={() => handleGenerateContent(7)} disabled={generating} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 disabled:opacity-50">
-                  <IconSparkles className="w-4 h-4" /> {generating ? 'Generating...' : "Generate This Week's Content"}
-                </button>
+                <h3 className="text-gray-900 font-medium mb-1">
+                  {stats.scheduledCount > 0 ? 'Queue is loaded' : 'All caught up!'}
+                </h3>
+                <p className="text-sm text-gray-500 mb-1">
+                  {stats.scheduledCount > 0
+                    ? `${stats.scheduledCount} posts queued and ready to go.`
+                    : stats.postedThisWeek > 0
+                      ? `${stats.postedThisWeek} posts went out this week automatically.`
+                      : 'Generate content to start your autopilot.'}
+                </p>
+                {scheduledPosts[0]?.scheduled_at && <p className="text-xs text-gray-400 mb-5">Next post: {new Date(scheduledPosts[0].scheduled_at).toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</p>}
+                {stats.scheduledCount === 0 && (
+                  <button onClick={() => handleGenerateContent(7)} disabled={generating} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 disabled:opacity-50">
+                    <IconSparkles className="w-4 h-4" /> {generating ? 'Generating...' : 'Generate Content'}
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
+import { createTrackedLink } from '@/lib/short-links';
 
 // ============================================================================
 // AUTOPILOT CONTENT GENERATION CRON
-// Runs every 6 hours to check if users need content generated
+// Runs every 6 hours. Uses FULL intelligence pipeline — same quality as
+// batch generation, with learning, writing DNA, and format variety.
 // ============================================================================
 
 const supabase = createClient(
@@ -16,15 +18,13 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Minimum posts needed in queue before triggering generation
 const MIN_QUEUE_THRESHOLD = 3;
-const POSTS_TO_GENERATE = 7; // Generate 1 week of content
+const POSTS_TO_GENERATE = 7;
 
 export async function GET(request) {
-  console.log('[AUTOPILOT] Starting autopilot content generation check...');
-  
+  console.log('[AUTOPILOT] Starting intelligent autopilot generation...');
+
   try {
-    // Get all users with autopilot enabled
     const { data: autopilotUsers, error: usersError } = await supabase
       .from('profiles')
       .select('id, product_name, product_description, target_audience, product_url, autopilot_enabled, autopilot_posts_per_day, autopilot_auto_approve')
@@ -40,13 +40,11 @@ export async function GET(request) {
       return NextResponse.json({ message: 'No autopilot users', processed: 0 });
     }
 
-    console.log(`[AUTOPILOT] Found ${autopilotUsers.length} users with autopilot enabled`);
-
+    console.log(`[AUTOPILOT] Found ${autopilotUsers.length} autopilot users`);
     const results = [];
 
     for (const user of autopilotUsers) {
       try {
-        // Check user's current queue
         const { data: queuedPosts, error: queueError } = await supabase
           .from('posts')
           .select('id')
@@ -55,50 +53,27 @@ export async function GET(request) {
           .gte('scheduled_at', new Date().toISOString());
 
         if (queueError) {
-          console.error(`[AUTOPILOT] Error checking queue for ${user.id}:`, queueError);
+          console.error(`[AUTOPILOT] Queue check error for ${user.id}:`, queueError);
           continue;
         }
 
         const queueCount = queuedPosts?.length || 0;
-        console.log(`[AUTOPILOT] User ${user.id} has ${queueCount} posts in queue`);
+        console.log(`[AUTOPILOT] User ${user.id} queue: ${queueCount} posts`);
 
-        // If queue is low, generate more content
         if (queueCount < MIN_QUEUE_THRESHOLD) {
-          console.log(`[AUTOPILOT] Queue low for ${user.id}, generating content...`);
-          
-          const generated = await generateAutopilotContent(user);
-          
-          results.push({
-            userId: user.id,
-            productName: user.product_name,
-            queueBefore: queueCount,
-            generated: generated,
-            status: 'generated'
-          });
+          console.log(`[AUTOPILOT] Queue low for ${user.id}, generating with full intelligence...`);
+          const generated = await generateIntelligentContent(user);
+          results.push({ userId: user.id, productName: user.product_name, queueBefore: queueCount, generated, status: 'generated' });
         } else {
-          results.push({
-            userId: user.id,
-            productName: user.product_name,
-            queueCount: queueCount,
-            status: 'sufficient'
-          });
+          results.push({ userId: user.id, productName: user.product_name, queueCount, status: 'sufficient' });
         }
       } catch (userError) {
         console.error(`[AUTOPILOT] Error processing user ${user.id}:`, userError);
-        results.push({
-          userId: user.id,
-          status: 'error',
-          error: userError.message
-        });
+        results.push({ userId: user.id, status: 'error', error: userError.message });
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      processed: autopilotUsers.length,
-      results
-    });
-
+    return NextResponse.json({ success: true, processed: autopilotUsers.length, results });
   } catch (error) {
     console.error('[AUTOPILOT] Cron error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -106,28 +81,47 @@ export async function GET(request) {
 }
 
 // ============================================================================
-// GENERATE AUTOPILOT CONTENT
+// GATHER FULL USER CONTEXT (matches batch quality)
 // ============================================================================
-async function generateAutopilotContent(user) {
-  const postsPerDay = user.autopilot_posts_per_day || 2;
-  const autoApprove = user.autopilot_auto_approve ?? true;
-  const totalPosts = POSTS_TO_GENERATE;
-
-  // Get user's recent commits for context
+async function gatherFullContext(user) {
   let recentCommits = [];
   try {
     const { data: commits } = await supabase
       .from('github_commits')
-      .select('message, additions, deletions, files_changed')
+      .select('message, additions, deletions, files_changed, diff_summary, committed_at')
       .eq('user_id', user.id)
       .order('committed_at', { ascending: false })
       .limit(10);
     recentCommits = commits || [];
   } catch (e) {
-    console.log('[AUTOPILOT] No GitHub commits available');
+    console.log('[AUTOPILOT] No commits available');
   }
 
-  // Get user's X communities
+  let topPosts = [];
+  try {
+    const { data: posts } = await supabase
+      .from('posts')
+      .select('content, hook_content, plug_content, likes_count, replies_count, impressions_count, engagement_score, metadata')
+      .eq('user_id', user.id)
+      .eq('status', 'posted')
+      .not('engagement_score', 'is', null)
+      .order('engagement_score', { ascending: false })
+      .limit(10);
+    topPosts = posts || [];
+  } catch (e) {
+    console.log('[AUTOPILOT] No post history');
+  }
+
+  let contentInsights = null;
+  try {
+    const { data: insights } = await supabase
+      .from('content_insights')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+    contentInsights = insights;
+  } catch {}
+
   let communities = [];
   try {
     const { data: userCommunities } = await supabase
@@ -136,36 +130,120 @@ async function generateAutopilotContent(user) {
       .eq('user_id', user.id)
       .eq('is_active', true);
     communities = userCommunities || [];
-  } catch (e) {
-    console.log('[AUTOPILOT] No communities available');
+  } catch {}
+
+  // Detect burnt out mode
+  let burntOutMode = false;
+  if (recentCommits.length > 0 && recentCommits[0]?.committed_at) {
+    const daysSince = (Date.now() - new Date(recentCommits[0].committed_at).getTime()) / (1000 * 60 * 60 * 24);
+    burntOutMode = daysSince > 3;
+  } else {
+    burntOutMode = true;
   }
 
-  // Build the prompt
-  const commitContext = recentCommits.length > 0
-    ? recentCommits.slice(0, 5).map(c => `- "${c.message}" (+${c.additions || 0}/-${c.deletions || 0})`).join('\n')
-    : 'No recent commits';
+  const writingDNA = analyzeWritingStyle(topPosts);
 
-  const productUrl = user.product_url || '';
+  return { recentCommits, topPosts, contentInsights, communities, writingDNA, burntOutMode };
+}
 
-  const prompt = buildAutopilotPrompt({
+// ============================================================================
+// ANALYZE WRITING STYLE
+// ============================================================================
+function analyzeWritingStyle(topPosts) {
+  if (topPosts.length === 0) {
+    return { avgSentenceLength: 'short', usesEmoji: false, tone: 'casual', formatting: 'broetry', signaturePatterns: [] };
+  }
+
+  const allContent = topPosts.map(p => p.hook_content || p.content).join(' ');
+  const sentences = allContent.split(/[.!?]+/).filter(s => s.trim());
+  const avgLength = sentences.length > 0
+    ? sentences.reduce((s, sent) => s + sent.trim().split(' ').length, 0) / sentences.length
+    : 8;
+
+  const hasEmojis = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]/u.test(allContent);
+  const hasBroetry = (allContent.match(/\n/g) || []).length > sentences.length / 2;
+
+  const patterns = [];
+  topPosts.forEach(post => {
+    const content = post.hook_content || post.content || '';
+    if (content.includes('→')) patterns.push('arrow_list');
+    if (/\d+ (things|tips|ways|lessons)/.test(content)) patterns.push('numbered_list');
+    if (content.endsWith('?')) patterns.push('question_ender');
+  });
+
+  return {
+    avgSentenceLength: avgLength < 8 ? 'very_short' : avgLength < 12 ? 'short' : 'medium',
+    usesEmoji: hasEmojis,
+    tone: 'casual',
+    formatting: hasBroetry ? 'broetry' : 'paragraph',
+    signaturePatterns: [...new Set(patterns)],
+  };
+}
+
+// ============================================================================
+// CALCULATE ALIGNMENT SCORE
+// ============================================================================
+function calculateAlignmentScore(hook) {
+  let score = 60;
+  const firstLine = hook.split('\n')[0] || '';
+  const lines = hook.split('\n').filter(l => l.trim());
+
+  const negativePatterns = [
+    'I almost', 'I broke', 'I failed', 'I wasted', 'I regret',
+    'Everyone\'s wrong', 'Everyone says', 'Nobody tells you',
+    'The worst part', 'Confession:', 'I\'ve been lying',
+    'Nothing pisses me off', 'I\'m tired of', 'Stop telling me'
+  ];
+  if (negativePatterns.some(p => firstLine.includes(p))) score += 15;
+  if (lines.length >= 4) score += 10;
+  const avgLineLength = lines.length > 0 ? lines.reduce((s, l) => s + l.length, 0) / lines.length : 50;
+  if (avgLineLength < 50) score += 5;
+  if (hook.endsWith('?')) score += 10;
+  if (/\d+/.test(hook)) score += 5;
+  const emotionalWords = ['hurt', 'scared', 'excited', 'angry', 'frustrated', 'tired', 'obsessed', 'addicted'];
+  if (emotionalWords.some(w => hook.toLowerCase().includes(w))) score += 5;
+  if (hook.includes('auth') || hook.includes('API') || hook.includes('bug') || hook.includes('code')) score += 5;
+  const bannedStarts = ['I\'m excited', 'Just shipped', 'Here\'s what', 'Pro tip', 'Thread'];
+  if (bannedStarts.some(p => firstLine.startsWith(p))) score -= 15;
+  if (hook.includes('building something') || hook.includes('working on')) score -= 10;
+  if (hook.length < 80) score -= 10;
+  if (hook.length > 270) score -= 5;
+
+  return Math.min(100, Math.max(0, score));
+}
+
+// ============================================================================
+// GENERATE INTELLIGENT CONTENT
+// ============================================================================
+async function generateIntelligentContent(user) {
+  const postsPerDay = user.autopilot_posts_per_day || 2;
+  const autoApprove = user.autopilot_auto_approve ?? true;
+  const totalPosts = POSTS_TO_GENERATE;
+
+  const ctx = await gatherFullContext(user);
+
+  console.log(`[AUTOPILOT] Context: ${ctx.recentCommits.length} commits, ${ctx.topPosts.length} top posts, insights: ${ctx.contentInsights ? ctx.contentInsights.posts_analyzed + ' analyzed' : 'none'}, burntOut: ${ctx.burntOutMode}`);
+
+  const prompt = buildIntelligentPrompt({
     productName: user.product_name,
     productDescription: user.product_description,
     targetAudience: user.target_audience,
-    productUrl,
-    commitContext,
+    productUrl: user.product_url || '',
+    recentCommits: ctx.recentCommits,
+    topPosts: ctx.topPosts,
+    contentInsights: ctx.contentInsights,
+    writingDNA: ctx.writingDNA,
+    burntOutMode: ctx.burntOutMode,
     totalPosts,
   });
 
-  // Generate content
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 10000,
+    max_tokens: 15000,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const text = response.content[0].text.trim();
-  
-  // Parse JSON
   let posts;
   try {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -175,157 +253,244 @@ async function generateAutopilotContent(user) {
     throw new Error('Failed to parse AI response');
   }
 
-  // Schedule the posts
-  const scheduleTimes = generateSchedule(totalPosts, postsPerDay);
+  if (!Array.isArray(posts)) throw new Error('AI response was not an array');
+
+  const scheduleTimes = generateSchedule(totalPosts, postsPerDay, ctx.contentInsights);
   let savedCount = 0;
 
   for (let i = 0; i < posts.length; i++) {
     const post = posts[i];
     const scheduledAt = scheduleTimes[i];
+    if (!scheduledAt) continue;
 
-    // Convert escaped newlines
     const hook = (post.hook || '').replace(/\\n/g, '\n').trim();
     const plug = (post.plug || '').replace(/\\n/g, '\n').trim();
+    if (!hook) continue;
 
-    // Find community UUID if specified
+    const cleanHook = hook.length > 280 ? hook.slice(0, 275).replace(/\s+\S*$/, '') + '...' : hook;
+    const cleanPlug = plug.length > 280 ? plug.slice(0, 275).replace(/\s+\S*$/, '') + '...' : plug;
+    const alignmentScore = calculateAlignmentScore(cleanHook);
+
     let communityUuid = null;
-    if (post.communityId) {
-      const community = communities.find(c => c.community_id === post.communityId);
+    if (post.communityId && ctx.communities.length > 0) {
+      const community = ctx.communities.find(c => c.community_id === post.communityId);
       communityUuid = community?.id || null;
     }
 
-    const { error: saveError } = await supabase
+    const { data: savedPost, error: saveError } = await supabase
       .from('posts')
       .insert({
         user_id: user.id,
-        content: hook,
-        hook_content: hook,
-        plug_content: plug,
+        content: cleanHook,
+        hook_content: cleanHook,
+        plug_content: cleanPlug || null,
         platform: 'x',
-        status: autoApprove ? 'scheduled' : 'pending', // Respect auto-approve setting
+        status: autoApprove ? 'scheduled' : 'pending',
         scheduled_at: scheduledAt.toISOString(),
         source: 'autopilot',
-        is_thread: true,
+        is_thread: !!cleanPlug,
         reply_delay: 60,
         community_id: communityUuid,
         metadata: {
-          content_type: post.type,
-          growth_pillar: post.type, // Map type to growth pillar
-          visual_concept: post.visual_concept,
-          alignment_score: 75, // Default score for autopilot
+          content_type: post.type || 'mixed',
+          growth_pillar: post.growth_pillar || 'authority',
+          format: post.format || 'mixed',
+          alignment_score: alignmentScore,
           autopilot_generated: true,
+          burnt_out_mode: ctx.burntOutMode,
         },
-      });
+      })
+      .select()
+      .single();
 
-    if (!saveError) {
-      savedCount++;
-    } else {
-      console.error('[AUTOPILOT] Error saving post:', saveError);
+    if (saveError) {
+      console.error('[AUTOPILOT] Save error:', saveError);
+      continue;
     }
+
+    // Create tracked link for plug URL
+    if (savedPost && cleanPlug) {
+      const urlMatch = cleanPlug.match(/https?:\/\/[^\s]+/);
+      if (urlMatch) {
+        try {
+          const trackedUrl = await createTrackedLink(urlMatch[0], savedPost.id, user.id);
+          if (trackedUrl && trackedUrl !== urlMatch[0]) {
+            const updatedPlug = cleanPlug.replace(urlMatch[0], trackedUrl);
+            await supabase.from('posts').update({ plug_content: updatedPlug }).eq('id', savedPost.id);
+          }
+        } catch (e) {
+          console.error('[AUTOPILOT] Tracked link error:', e.message);
+        }
+      }
+    }
+
+    savedCount++;
   }
 
-  console.log(`[AUTOPILOT] Generated ${savedCount} posts for user ${user.id}`);
+  console.log(`[AUTOPILOT] Generated ${savedCount} intelligent posts for ${user.product_name}`);
   return savedCount;
 }
 
 // ============================================================================
-// BUILD AUTOPILOT PROMPT
+// BUILD INTELLIGENT PROMPT
 // ============================================================================
-function buildAutopilotPrompt({ productName, productDescription, targetAudience, productUrl, commitContext, totalPosts }) {
-  return `You are an obsessed solo founder writing tweets at 2am. Raw, unfiltered, slightly unhinged.
+function buildIntelligentPrompt({ productName, productDescription, targetAudience, productUrl, recentCommits, topPosts, contentInsights, writingDNA, burntOutMode, totalPosts }) {
 
-## MISSION
-Generate ${totalPosts} viral tweets for autopilot mode. These will be auto-posted, so they must be HIGH QUALITY.
+  const commitStories = recentCommits.slice(0, 5).map(c => {
+    return `- "${c.message || ''}" (${c.files_changed || 0} files, +${c.additions || 0}/-${c.deletions || 0})`;
+  }).join('\n') || 'No recent commits — user is heads-down or taking a break';
 
-## THE PRODUCT
-**Name:** ${productName}
-**What it does:** ${productDescription}
-**Target audience:** ${targetAudience || 'Indie hackers and founders'}
-**URL:** ${productUrl || 'Not provided'}
+  const topPostsContext = topPosts.length > 0
+    ? topPosts.slice(0, 5).map(p => {
+        const content = (p.hook_content || p.content || '').slice(0, 100);
+        const score = p.engagement_score ? ` (score: ${Math.round(p.engagement_score)})` : '';
+        return `"${content}..."${score}`;
+      }).join('\n')
+    : 'No history yet';
 
-## RECENT WORK (for authenticity)
-${commitContext}
+  let insightsBlock = '';
+  if (contentInsights && contentInsights.posts_analyzed >= 5) {
+    insightsBlock = `
+## WHAT WORKS FOR YOUR AUDIENCE (${contentInsights.posts_analyzed} posts analyzed)
+- Best format: ${contentInsights.best_format}
+- Best time: ${contentInsights.best_posting_hour}:00 on ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][contentInsights.best_posting_day || 0]}
+- Avg impressions: ${contentInsights.avg_impressions} | Avg replies: ${contentInsights.avg_replies}
+${contentInsights.top_hook_patterns?.length > 0 ? `- Top hooks: ${contentInsights.top_hook_patterns.slice(0, 3).map(h => `"${h.hook}"`).join(', ')}` : ''}
 
-## BROETRY FORMAT (MANDATORY)
-Every tweet must follow 1-1-3-1 structure:
+Generate ~40% of posts in "${contentInsights.best_format}" format. Weight the rest across others.`;
+  }
 
-Line 1: NEGATIVE HOOK (confession, failure, challenge)
+  let styleGuide = 'Casual indie hacker voice. Short sentences.';
+  const guides = [];
+  if (writingDNA.avgSentenceLength === 'very_short') guides.push('SHORT PUNCHY sentences (5-7 words)');
+  if (!writingDNA.usesEmoji) guides.push('Minimal emojis');
+  if (writingDNA.signaturePatterns.includes('arrow_list')) guides.push('Use → for lists');
+  if (writingDNA.signaturePatterns.includes('question_ender')) guides.push('End with questions sometimes');
+  if (guides.length > 0) styleGuide = guides.join('. ') + '.';
 
-[blank line]
+  const burntOutBlock = burntOutMode ? `
+## BURNT OUT MODE
+No recent commits. Generate content from:
+- Reflections on the building journey
+- Lessons learned building ${productName}
+- Relatable founder/developer struggles
+- Evergreen insights about the problem space
+Do NOT mention being inactive. Content should feel natural.
+` : '';
 
-Lines 3-5: SHORT PUNCHY VALUE (max 8 words each)
+  return `You are a solo founder who writes about building in public. Not a content creator — someone who shares what they're building, learning, and struggling with.
 
-[blank line]
+Write like texting a friend, not a LinkedIn post. Sometimes excited, sometimes frustrated, sometimes just sharing something interesting.
 
-Line 7: PIVOT (question or incomplete thought)
+---
 
-## FIRST LINE MUST BE:
-- A confession: "I've been lying to myself about..."
-- A failure: "I broke production today."
-- A challenge: "Everyone's wrong about..."
-- Frustration: "Nothing pisses me off more than..."
+## WHO YOU ARE
+Building: ${productName}
+What it does: ${productDescription}
+URL: ${productUrl || 'Not shared publicly yet'}
+Audience: ${targetAudience || 'Developers and indie hackers'}
 
-## BANNED OPENERS:
-- "Here's what I learned..."
-- "I'm excited to share..."
-- "Just shipped..."
-- "Pro tip:"
+## YOUR STYLE
+${styleGuide}
 
-## OUTPUT FORMAT
-Return ONLY a JSON array:
+---
 
+## EXAMPLES (match ENERGY, never copy)
+1. "The auth bug that took 4 hours was a missing await. I'm going to bed."
+2. "Someone asked how I market my SaaS. I showed them my git log."
+3. "94 users. 3 paying. 1 churned because I didn't have dark mode."
+4. "Shipped the LinkedIn integration. Immediately broke the X integration."
+5. "6 months of building. 0 revenue. But 12 people DMed me saying they can't live without it."
+6. "Every time I say 'this will take 30 minutes' multiply by 6."
+7. "Today I mass-deleted a feature I spent 3 weeks building. The product is better now."
+8. "Asked 10 users what feature they wanted most. 8 said 'make it faster.'"
+
+---
+
+## FORMAT VARIETY (CRITICAL — vary every post)
+**Broetry (30%)** — 1 sentence per line, whitespace between
+**One-liner (20%)** — Single punch, max 140 chars
+**Narrative (20%)** — 2-3 short paragraphs, micro-story
+**Question (15%)** — Opens with genuine question
+**Mini-list (15%)** — 3-5 items with setup
+
+## HOOK VARIETY (NOT all negative)
+~35% Negative/vulnerable | ~25% Observational | ~25% Technical wins | ~15% Casual/humor
+
+---
+
+## RECENT COMMITS
+${commitStories}
+${burntOutBlock}
+## BEST PERFORMING CONTENT
+${topPostsContext}
+${insightsBlock}
+
+---
+
+## THE PLUG (~80% get one, ~20% pure brand-building)
+Plug styles: Direct URL drop | Soft mention | Value plug | Social proof | Story continuation
+
+## RULES
+1. Hook ≤ 280 chars. Plug ≤ 280 chars.
+2. Use \\n for line breaks.
+3. No hashtags. No corporate speak. Write like a human.
+4. Be specific: "auth flow" not "the code"
+5. Max 1-2 emojis, many posts zero.
+6. VARY format — never same format twice in a row.
+7. These auto-post — must be HIGH QUALITY.
+
+---
+
+## OUTPUT — ONLY a JSON array:
 [
   {
-    "hook": "Negative hook here\\n\\nShort line.\\nAnother line.\\nThird line.\\n\\nEnding question?",
-    "plug": "Natural follow-up with ${productUrl || 'product mention'}\\n\\nSoft CTA",
-    "type": "confession|failure|hot_take|frustration|vulnerable",
-    "visual_concept": "Screenshot of X or description of ideal visual"
+    "hook": "Tweet with \\n for breaks",
+    "plug": "Reply with ${productUrl || 'link'}\\n\\nSoft CTA",
+    "type": "confession|observation|technical|question|humor|story",
+    "format": "broetry|one_liner|narrative|question|mini_list",
+    "growth_pillar": "relatability|authority|vulnerability|humor",
+    "has_plug": true
   }
 ]
 
-Generate exactly ${totalPosts} posts. No markdown, no explanation.`;
+Generate exactly ${totalPosts} posts. Each must feel different — same voice, different energy.`;
 }
 
 // ============================================================================
-// GENERATE SCHEDULE
+// SCHEDULE — uses learned optimal timing
 // ============================================================================
-function generateSchedule(totalPosts, postsPerDay) {
+function generateSchedule(totalPosts, postsPerDay, contentInsights) {
   const times = [];
   const now = new Date();
-  
-  // Start from next optimal time slot
   const startDate = new Date(now);
-  startDate.setHours(startDate.getHours() + 2); // Start 2 hours from now
-  
-  // Optimal posting hours
-  const optimalHours = [9, 12, 15, 18, 20];
-  
+  startDate.setHours(startDate.getHours() + 2);
+
+  let optimalHours = [9, 12, 15, 18, 20];
+  if (contentInsights?.best_posting_hour !== undefined) {
+    const best = contentInsights.best_posting_hour;
+    optimalHours = [
+      Math.max(8, best - 3),
+      best,
+      Math.min(21, best + 3),
+      Math.min(21, best + 6),
+      Math.min(22, best + 8),
+    ].filter((h, i, arr) => arr.indexOf(h) === i);
+  }
+
   let dayOffset = 0;
-  let postIndex = 0;
-  
   while (times.length < totalPosts) {
     const dayDate = new Date(startDate);
     dayDate.setDate(dayDate.getDate() + dayOffset);
-    
-    // Get posts for this day
     const postsToday = Math.min(postsPerDay, totalPosts - times.length);
-    
     for (let i = 0; i < postsToday; i++) {
       const postTime = new Date(dayDate);
-      const hour = optimalHours[i % optimalHours.length];
-      postTime.setHours(hour, Math.floor(Math.random() * 30), 0, 0);
-      
-      // Make sure it's in the future
-      if (postTime > now) {
-        times.push(postTime);
-      }
+      postTime.setHours(optimalHours[i % optimalHours.length], Math.floor(Math.random() * 30), 0, 0);
+      if (postTime > now) times.push(postTime);
     }
-    
     dayOffset++;
-    
-    // Safety check
     if (dayOffset > 30) break;
   }
-  
+
   return times.sort((a, b) => a - b);
 }

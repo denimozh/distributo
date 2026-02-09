@@ -168,6 +168,7 @@ export async function POST(request) {
       postsPerDay,
       days,
       totalPosts,
+      contentInsights,
     });
 
     console.log(`[GENERATE] AI generated ${generatedPosts.length} psychological hook posts`);
@@ -333,7 +334,7 @@ function extractSignaturePatterns(topPosts) {
 // GENERATE SUPERX-KILLER CONTENT
 // The strategic refactor that beats the competition
 // ============================================================================
-async function generateSuperXKillerContent({ userContext, postsPerDay, days, totalPosts }) {
+async function generateSuperXKillerContent({ userContext, postsPerDay, days, totalPosts, contentInsights }) {
   const { profile, communities, recentCommits, topPosts, productUrl, writingDNA } = userContext;
 
   const prompt = buildSuperXPrompt({
@@ -347,7 +348,7 @@ async function generateSuperXKillerContent({ userContext, postsPerDay, days, tot
     postsPerDay,
     days,
     hookLibrary: HOOK_LIBRARY,
-    contentInsights: null, // Will be passed from caller
+    contentInsights,
   });
 
   const response = await anthropic.messages.create({
