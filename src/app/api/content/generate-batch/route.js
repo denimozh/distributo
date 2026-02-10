@@ -271,6 +271,8 @@ async function gatherUserContext(userId) {
     topPosts,
     productUrl,
     writingDNA,
+    styleProfile: profile.style_profile || null,
+    userSettings: profile.settings || {},
   };
 }
 
@@ -349,6 +351,8 @@ async function generateSuperXKillerContent({ userContext, postsPerDay, days, tot
     days,
     hookLibrary: HOOK_LIBRARY,
     contentInsights,
+    styleProfile: userContext.styleProfile,
+    userSettings: userContext.userSettings,
   });
 
   const response = await anthropic.messages.create({
@@ -421,7 +425,7 @@ async function generateSuperXKillerContent({ userContext, postsPerDay, days, tot
 // BUILD VIRAL ENGINE PROMPT
 // The "Kill Shot" refactor - Constraint-based framework, not instruction list
 // ============================================================================
-function buildSuperXPrompt({ profile, productUrl, communities, recentCommits, topPosts, writingDNA, totalPosts, postsPerDay, days, hookLibrary, contentInsights }) {
+function buildSuperXPrompt({ profile, productUrl, communities, recentCommits, topPosts, writingDNA, totalPosts, postsPerDay, days, hookLibrary, contentInsights, styleProfile, userSettings }) {
   
   const communityList = communities.length > 0 
     ? communities.map(c => `- "${c.name}" (ID: ${c.community_id})`).join('\n')
@@ -451,6 +455,27 @@ function buildSuperXPrompt({ profile, productUrl, communities, recentCommits, to
 Generate ~40% of posts in ${contentInsights.best_format} format. Weight the rest across other formats.
 ` : '';
 
+  // Voice profile injection
+  let voiceBlock = '';
+  if (styleProfile) {
+    voiceBlock = `
+## YOUR VOICE (analyzed from your past posts)
+Tone: ${styleProfile.tone || 'casual'}
+Style: ${styleProfile.sentence_style || 'short punchy'}
+Formatting: ${styleProfile.formatting_preference || 'mixed'}
+${styleProfile.writing_rules?.length ? `Voice rules:\n${styleProfile.writing_rules.map(r => `- ${r}`).join('\n')}` : ''}
+${styleProfile.signature_phrases?.length ? `Signature phrases: ${styleProfile.signature_phrases.join(', ')}` : ''}
+CRITICAL: Match this voice exactly. Sound like THIS person, not generic AI.
+`;
+  }
+
+  // User preferences
+  let prefsBlock = '';
+  const tone = userSettings?.defaultTone;
+  if (tone && tone !== 'casual') prefsBlock += `Write in a ${tone} tone. `;
+  if (userSettings?.includeHashtags === false) prefsBlock += 'NO hashtags. ';
+  if (userSettings?.includeEmojis === false) prefsBlock += 'NO emojis at all. ';
+
   return `You are a solo founder who writes about building in public. You're not a content creator — you're someone who happens to share what they're building, learning, and struggling with.
 
 Your writing should feel like a text to a friend, not a LinkedIn post. Sometimes you're excited, sometimes frustrated, sometimes just sharing something interesting. You're a real person with range.
@@ -463,7 +488,8 @@ Building: ${profile.product_name}
 What it does: ${profile.product_description}
 URL: ${productUrl || 'Not shared publicly yet'}
 Audience: ${profile.target_audience || 'Developers and indie hackers'}
-
+${voiceBlock}
+${prefsBlock ? `User preferences: ${prefsBlock}` : ''}
 ---
 
 ## REAL EXAMPLES OF GREAT INDIE HACKER TWEETS
@@ -653,9 +679,11 @@ function calculateAlignmentScore(hook, growthPillar) {
   // PENALIZE GENERIC CONTENT
   if (hook.includes('building something') || hook.includes('working on')) score -= 10;
   
-  // LENGTH CHECKS
-  if (hook.length < 80) score -= 10; // Too short
-  if (hook.length > 270) score -= 5; // Too close to limit
+  // LENGTH CHECKS — DON'T penalize one-liners or questions
+  const isOneLiner = lines.length <= 2 && hook.length < 150;
+  const isQuestion = hook.endsWith('?');
+  if (hook.length < 80 && !isOneLiner && !isQuestion) score -= 10;
+  if (hook.length > 270) score -= 5;
   
   return Math.min(100, Math.max(0, score));
 }

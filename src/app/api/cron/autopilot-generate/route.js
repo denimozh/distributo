@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 import { createTrackedLink } from '@/lib/short-links';
+import { logActivity, normalizePost, buildVoiceBlock, buildInsightsBlock, buildCommunityRule, buildLinkedInModifier, shouldBeSilencePost } from '@/lib/content-core';
 
 // ============================================================================
 // AUTOPILOT CONTENT GENERATION CRON
@@ -18,8 +19,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const MIN_QUEUE_THRESHOLD = 3;
-const POSTS_TO_GENERATE = 7;
+const DAYS_AHEAD = 5; // Keep 5 days of content queued
 
 export async function GET(request) {
   console.log('[AUTOPILOT] Starting intelligent autopilot generation...');
@@ -27,7 +27,7 @@ export async function GET(request) {
   try {
     const { data: autopilotUsers, error: usersError } = await supabase
       .from('profiles')
-      .select('id, product_name, product_description, target_audience, product_url, autopilot_enabled, autopilot_posts_per_day, autopilot_auto_approve')
+      .select('id, product_name, product_description, target_audience, product_url, autopilot_enabled, autopilot_posts_per_day, autopilot_auto_approve, autopilot_platforms')
       .eq('autopilot_enabled', true);
 
     if (usersError) {
@@ -45,6 +45,10 @@ export async function GET(request) {
 
     for (const user of autopilotUsers) {
       try {
+        const postsPerDay = user.autopilot_posts_per_day || 2;
+        const targetQueue = postsPerDay * DAYS_AHEAD; // e.g. 2/day × 5 days = 10 posts needed
+
+        // Count how many future posts already exist
         const { data: queuedPosts, error: queueError } = await supabase
           .from('posts')
           .select('id')
@@ -58,14 +62,17 @@ export async function GET(request) {
         }
 
         const queueCount = queuedPosts?.length || 0;
-        console.log(`[AUTOPILOT] User ${user.id} queue: ${queueCount} posts`);
+        const postsNeeded = Math.max(0, targetQueue - queueCount);
+        
+        console.log(`[AUTOPILOT] User ${user.id}: ${queueCount} in queue, target ${targetQueue}, need ${postsNeeded}`);
 
-        if (queueCount < MIN_QUEUE_THRESHOLD) {
-          console.log(`[AUTOPILOT] Queue low for ${user.id}, generating with full intelligence...`);
-          const generated = await generateIntelligentContent(user);
-          results.push({ userId: user.id, productName: user.product_name, queueBefore: queueCount, generated, status: 'generated' });
+        if (postsNeeded > 0) {
+          console.log(`[AUTOPILOT] Generating ${postsNeeded} posts for ${user.product_name}...`);
+          const generated = await generateIntelligentContent(user, postsNeeded);
+          results.push({ userId: user.id, productName: user.product_name, queueBefore: queueCount, generated, postsNeeded, status: 'generated' });
         } else {
-          results.push({ userId: user.id, productName: user.product_name, queueCount, status: 'sufficient' });
+          console.log(`[AUTOPILOT] Queue full for ${user.product_name} (${queueCount}/${targetQueue})`);
+          results.push({ userId: user.id, productName: user.product_name, queueCount, targetQueue, status: 'sufficient' });
         }
       } catch (userError) {
         console.error(`[AUTOPILOT] Error processing user ${user.id}:`, userError);
@@ -143,7 +150,20 @@ async function gatherFullContext(user) {
 
   const writingDNA = analyzeWritingStyle(topPosts);
 
-  return { recentCommits, topPosts, contentInsights, communities, writingDNA, burntOutMode };
+  // Fetch user's voice profile and settings
+  let styleProfile = null;
+  let userSettings = {};
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('style_profile, settings')
+      .eq('id', user.id)
+      .single();
+    styleProfile = profile?.style_profile;
+    userSettings = profile?.settings || {};
+  } catch {}
+
+  return { recentCommits, topPosts, contentInsights, communities, writingDNA, burntOutMode, styleProfile, userSettings };
 }
 
 // ============================================================================
@@ -206,7 +226,11 @@ function calculateAlignmentScore(hook) {
   const bannedStarts = ['I\'m excited', 'Just shipped', 'Here\'s what', 'Pro tip', 'Thread'];
   if (bannedStarts.some(p => firstLine.startsWith(p))) score -= 15;
   if (hook.includes('building something') || hook.includes('working on')) score -= 10;
-  if (hook.length < 80) score -= 10;
+  
+  // Only penalize short hooks if they're NOT one-liners or questions
+  const isOneLiner = lines.length <= 2 && hook.length < 150;
+  const isQuestion = hook.endsWith('?');
+  if (hook.length < 80 && !isOneLiner && !isQuestion) score -= 10;
   if (hook.length > 270) score -= 5;
 
   return Math.min(100, Math.max(0, score));
@@ -215,10 +239,10 @@ function calculateAlignmentScore(hook) {
 // ============================================================================
 // GENERATE INTELLIGENT CONTENT
 // ============================================================================
-async function generateIntelligentContent(user) {
+async function generateIntelligentContent(user, postsNeeded = 7) {
   const postsPerDay = user.autopilot_posts_per_day || 2;
   const autoApprove = user.autopilot_auto_approve ?? true;
-  const totalPosts = POSTS_TO_GENERATE;
+  const totalPosts = Math.min(postsNeeded, 14); // Cap at 14 per run to stay within token limits
 
   const ctx = await gatherFullContext(user);
 
@@ -234,6 +258,8 @@ async function generateIntelligentContent(user) {
     contentInsights: ctx.contentInsights,
     writingDNA: ctx.writingDNA,
     burntOutMode: ctx.burntOutMode,
+    styleProfile: ctx.styleProfile,
+    userSettings: ctx.userSettings,
     totalPosts,
   });
 
@@ -263,17 +289,20 @@ async function generateIntelligentContent(user) {
     const scheduledAt = scheduleTimes[i];
     if (!scheduledAt) continue;
 
-    const hook = (post.hook || '').replace(/\\n/g, '\n').trim();
-    const plug = (post.plug || '').replace(/\\n/g, '\n').trim();
-    if (!hook) continue;
+    // Use shared normalizer for consistent scoring + format detection
+    const normalized = normalizePost(post);
+    if (!normalized.hook) continue;
 
-    const cleanHook = hook.length > 280 ? hook.slice(0, 275).replace(/\s+\S*$/, '') + '...' : hook;
-    const cleanPlug = plug.length > 280 ? plug.slice(0, 275).replace(/\s+\S*$/, '') + '...' : plug;
-    const alignmentScore = calculateAlignmentScore(cleanHook);
+    // Enforce silence posts (10-15% with no plug)
+    const isSilence = shouldBeSilencePost(i, posts.length);
+    const finalPlug = isSilence ? null : normalized.plug;
+
+    const cleanHook = normalized.hook.length > 280 ? normalized.hook.slice(0, 275).replace(/\s+\S*$/, '') + '...' : normalized.hook;
+    const cleanPlug = finalPlug ? (finalPlug.length > 280 ? finalPlug.slice(0, 275).replace(/\s+\S*$/, '') + '...' : finalPlug) : null;
 
     let communityUuid = null;
-    if (post.communityId && ctx.communities.length > 0) {
-      const community = ctx.communities.find(c => c.community_id === post.communityId);
+    if (normalized.communityId && ctx.communities.length > 0) {
+      const community = ctx.communities.find(c => c.community_id === normalized.communityId);
       communityUuid = community?.id || null;
     }
 
@@ -283,7 +312,7 @@ async function generateIntelligentContent(user) {
         user_id: user.id,
         content: cleanHook,
         hook_content: cleanHook,
-        plug_content: cleanPlug || null,
+        plug_content: cleanPlug,
         platform: 'x',
         status: autoApprove ? 'scheduled' : 'pending',
         scheduled_at: scheduledAt.toISOString(),
@@ -294,10 +323,13 @@ async function generateIntelligentContent(user) {
         metadata: {
           content_type: post.type || 'mixed',
           growth_pillar: post.growth_pillar || 'authority',
-          format: post.format || 'mixed',
-          alignment_score: alignmentScore,
+          format: normalized.format, // System-detected, not AI self-label
+          hook_type: normalized.hookType,
+          model_alignment_score: normalized.modelAlignmentScore,
+          system_alignment_score: normalized.systemAlignmentScore,
           autopilot_generated: true,
           burnt_out_mode: ctx.burntOutMode,
+          is_silence_post: isSilence,
         },
       })
       .select()
@@ -305,7 +337,36 @@ async function generateIntelligentContent(user) {
 
     if (saveError) {
       console.error('[AUTOPILOT] Save error:', saveError);
+      await logActivity(user.id, 'error', `Failed to save post: ${saveError.message}`);
       continue;
+    }
+
+    // LinkedIn post with platform-specific content
+    const platforms = user.autopilot_platforms || ['x'];
+    if (platforms.includes('linkedin')) {
+      // LinkedIn gets adapted content — more professional, more context
+      const linkedinHook = cleanHook.replace(/\n/g, '\n\n'); // Double-space for LinkedIn readability
+      const linkedinContent = linkedinHook + (cleanPlug ? '\n\n' + cleanPlug : '');
+      
+      await supabase.from('posts').insert({
+        user_id: user.id,
+        content: linkedinContent,
+        hook_content: cleanHook,
+        plug_content: cleanPlug,
+        first_comment_content: cleanPlug,
+        first_comment_delay_seconds: 45,
+        platform: 'linkedin',
+        status: autoApprove ? 'scheduled' : 'pending',
+        scheduled_at: new Date(scheduledAt.getTime() + 30 * 60000).toISOString(),
+        source: 'autopilot',
+        metadata: {
+          content_type: post.type || 'mixed',
+          format: normalized.format,
+          hook_type: normalized.hookType,
+          autopilot_generated: true,
+          system_alignment_score: normalized.systemAlignmentScore,
+        },
+      }).select().single().catch(e => console.error('[AUTOPILOT] LinkedIn save error:', e.message));
     }
 
     // Create tracked link for plug URL
@@ -327,6 +388,13 @@ async function generateIntelligentContent(user) {
     savedCount++;
   }
 
+  // Log activity — the machine is visible
+  const platformsList = (user.autopilot_platforms || ['x']).join(' + ');
+  await logActivity(user.id, 'generate', `Generated ${savedCount} posts for ${platformsList}${ctx.burntOutMode ? ' (burnt-out mode)' : ''}`, {
+    platform: 'x',
+    metadata: { count: savedCount, burntOut: ctx.burntOutMode },
+  });
+
   console.log(`[AUTOPILOT] Generated ${savedCount} intelligent posts for ${user.product_name}`);
   return savedCount;
 }
@@ -334,7 +402,7 @@ async function generateIntelligentContent(user) {
 // ============================================================================
 // BUILD INTELLIGENT PROMPT
 // ============================================================================
-function buildIntelligentPrompt({ productName, productDescription, targetAudience, productUrl, recentCommits, topPosts, contentInsights, writingDNA, burntOutMode, totalPosts }) {
+function buildIntelligentPrompt({ productName, productDescription, targetAudience, productUrl, recentCommits, topPosts, contentInsights, writingDNA, burntOutMode, styleProfile, userSettings, totalPosts }) {
 
   const commitStories = recentCommits.slice(0, 5).map(c => {
     return `- "${c.message || ''}" (${c.files_changed || 0} files, +${c.additions || 0}/-${c.deletions || 0})`;
@@ -368,14 +436,45 @@ Generate ~40% of posts in "${contentInsights.best_format}" format. Weight the re
   if (writingDNA.signaturePatterns.includes('question_ender')) guides.push('End with questions sometimes');
   if (guides.length > 0) styleGuide = guides.join('. ') + '.';
 
+  // Voice profile from user's analyzed posts
+  let voiceBlock = '';
+  if (styleProfile) {
+    voiceBlock = `
+## YOUR VOICE (analyzed from your past posts)
+Tone: ${styleProfile.tone || 'casual'}
+Style: ${styleProfile.sentence_style || 'short punchy'}
+Formatting: ${styleProfile.formatting_preference || 'mixed'}
+${styleProfile.writing_rules?.length ? `Voice rules:\n${styleProfile.writing_rules.map(r => `- ${r}`).join('\n')}` : ''}
+${styleProfile.signature_phrases?.length ? `Signature phrases: ${styleProfile.signature_phrases.join(', ')}` : ''}
+${styleProfile.personality_traits?.length ? `Personality: ${styleProfile.personality_traits.join(', ')}` : ''}
+
+CRITICAL: Match this voice exactly. The posts should sound like THIS person wrote them, not a generic AI.
+`;
+  }
+
+  // User preferences
+  let prefsBlock = '';
+  const tone = userSettings?.defaultTone;
+  if (tone && tone !== 'casual') prefsBlock += `Write in a ${tone} tone. `;
+  if (userSettings?.includeHashtags === false) prefsBlock += 'NO hashtags. ';
+  if (userSettings?.includeEmojis === false) prefsBlock += 'NO emojis at all. ';
+
   const burntOutBlock = burntOutMode ? `
-## BURNT OUT MODE
-No recent commits. Generate content from:
+## BURNT OUT MODE — No recent commits detected
+Generate content from:
 - Reflections on the building journey
 - Lessons learned building ${productName}
-- Relatable founder/developer struggles
+- Relatable developer/founder struggles
 - Evergreen insights about the problem space
-Do NOT mention being inactive. Content should feel natural.
+- Observational humor about the indie hacker life
+
+FORMAT SHIFT: In burnt-out mode:
+- 40% observational/humor (not technical wins)
+- 30% question/engagement posts  
+- 20% narrative reflections
+- 10% mini-lists (lessons learned)
+- Reduce plugs to ~60% (more brand-building, less selling)
+- NEVER mention being inactive or taking a break
 ` : '';
 
   return `You are a solo founder who writes about building in public. Not a content creator — someone who shares what they're building, learning, and struggling with.
@@ -392,6 +491,13 @@ Audience: ${targetAudience || 'Developers and indie hackers'}
 
 ## YOUR STYLE
 ${styleGuide}
+${voiceBlock}
+${prefsBlock ? `## USER PREFERENCES\n${prefsBlock}` : ''}
+${buildCommunityRule()}
+${buildLinkedInModifier()}
+
+## SILENCE POSTS
+~10-15% of posts should have NO plug, NO CTA. Just the hook. These build trust and improve downstream reach. Mark these with "plug": "" in your output.
 
 ---
 

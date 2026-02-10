@@ -1,6 +1,7 @@
 // src/app/api/cron/post-scheduled/route.js
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logActivity } from '@/lib/content-core';
 
 // Use service role to bypass RLS
 const supabase = createClient(
@@ -231,6 +232,14 @@ async function processXPost(post, postResult) {
   const tweetId = tweetData.data?.id;
   console.log(`[CRON] Tweet posted successfully! ID: ${tweetId}`);
 
+  // Log activity — machine is visible
+  const hookPreview = (post.hook_content || post.content || '').split('\n')[0].slice(0, 60);
+  await logActivity(post.user_id, 'publish', `Posted to X: "${hookPreview}..."`, {
+    platform: 'x',
+    postId: post.id,
+    metadata: { tweetId, community: !!actualXCommunityId },
+  });
+
   // Build URL based on whether it's a community post
   let externalUrl = `https://x.com/${account.platform_username}/status/${tweetId}`;
   if (actualXCommunityId) {
@@ -433,6 +442,14 @@ async function processLinkedInPost(post, postResult) {
   const linkedinPostId = responseData.id;
   
   console.log(`[CRON] LinkedIn post successful! ID: ${linkedinPostId}`);
+
+  // Log activity
+  const liHookPreview = (post.hook_content || post.content || '').split('\n')[0].slice(0, 60);
+  await logActivity(post.user_id, 'publish', `Posted to LinkedIn: "${liHookPreview}..."`, {
+    platform: 'linkedin',
+    postId: post.id,
+    metadata: { linkedinPostId },
+  });
   postResult.linkedin_id = linkedinPostId;
 
   // ==========================================

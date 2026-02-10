@@ -19,16 +19,24 @@ export async function GET(request, { params }) {
 
     if (error || !link) return NextResponse.redirect(new URL('/', request.url));
 
-    // Fire-and-forget click increment
-    supabase.from('link_clicks').update({
-      click_count: (link.click_count || 0) + 1,
-      last_clicked_at: new Date().toISOString(),
-    }).eq('id', link.id).then(() => {}).catch(() => {});
+    // Atomic increment — no race condition
+    supabase.rpc('increment_link_clicks', { link_uuid: link.id }).catch(() => {
+      // Fallback if RPC doesn't exist: direct update
+      supabase.from('link_clicks').update({
+        click_count: (link.click_count || 0) + 1,
+        last_clicked_at: new Date().toISOString(),
+      }).eq('id', link.id).then(() => {}).catch(() => {});
+    });
 
+    // Also update the post's click count
     if (link.post_id) {
-      supabase.from('posts').update({
-        clicks_count: (link.click_count || 0) + 1
-      }).eq('id', link.post_id).then(() => {}).catch(() => {});
+      supabase.from('link_clicks')
+        .select('click_count')
+        .eq('post_id', link.post_id)
+        .then(({ data }) => {
+          const total = (data || []).reduce((sum, l) => sum + (l.click_count || 0), 0) + 1;
+          supabase.from('posts').update({ clicks_count: total }).eq('id', link.post_id).then(() => {}).catch(() => {});
+        }).catch(() => {});
     }
 
     return NextResponse.redirect(link.destination_url);

@@ -205,7 +205,7 @@ function GhostSlot({ time, type, onGenerate, isGenerating }) {
           )}
         </div>
         <span className="text-[10px] text-gray-400 group-hover:text-blue-600 font-medium uppercase transition-colors">
-          {isGenerating ? 'Generating...' : 'Click to Generate'}
+          {isGenerating ? 'Generating...' : '⚡ Autopilot queued · Generate now'}
         </span>
       </div>
       <p className="text-xs text-gray-500 group-hover:text-gray-700 mb-2 transition-colors">
@@ -219,7 +219,7 @@ function GhostSlot({ time, type, onGenerate, isGenerating }) {
   );
 }
 
-// Post Card with Thread Indicator
+// Post Card with Thread Indicator + Lifecycle + Autopilot Badge
 function PostCard({ post, onClick }) {
   const statusColors = {
     pending: 'border-l-amber-400 bg-amber-50',
@@ -230,38 +230,60 @@ function PostCard({ post, onClick }) {
 
   const PlatformIcon = post.platform === 'linkedin' ? IconLinkedIn : IconTwitterX;
   const isThread = post.plug_content || post.is_thread || post.has_plug;
+  const isAutopilot = post.source === 'autopilot' || post.metadata?.autopilot_generated;
+  const isLinkedIn = post.platform === 'linkedin';
+  const hasMetrics = (post.impressions_count || 0) > 0;
+  
+  // Lifecycle: Generated → Scheduled → Posted → Metrics → Learned
+  const lifecycle = post.status === 'posted' 
+    ? (hasMetrics ? (post.metadata?.learned ? 4 : 3) : 2)
+    : post.status === 'scheduled' ? 1 
+    : 0;
+  const lifecycleSteps = ['Generated', 'Scheduled', 'Posted', 'Metrics', 'Learned'];
+  const lifecycleIcons = ['✍️', '📅', '✅', '📊', '🧠'];
 
   return (
     <button
       onClick={() => onClick(post)}
-      className={`w-full text-left rounded-xl border-l-4 ${statusColors[post.status]} border border-gray-200 hover:shadow-md transition-all`}
+      className={`w-full text-left rounded-xl border-l-4 ${statusColors[post.status]} border border-gray-200 hover:shadow-md transition-all ${isLinkedIn ? 'min-h-[100px]' : ''}`}
     >
       <div className="p-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <PlatformIcon className="w-3.5 h-3.5 text-gray-500" />
-            {/* Thread Indicator - Shows 1/2 badge for hook+plug posts */}
+            {isLinkedIn && (
+              <span className="text-[8px] font-medium text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Professional</span>
+            )}
+            {isAutopilot && (
+              <span className="text-[8px] font-medium text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded flex items-center gap-0.5">⚡ Autopilot</span>
+            )}
             {isThread && (
               <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 rounded" title="Thread: Link in reply for better reach">
                 <IconThread className="w-3 h-3 text-blue-600" />
                 <span className="text-[9px] font-bold text-blue-600">1/2</span>
               </div>
             )}
-            {/* Community indicator */}
             {post.community_id && (
               <div className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 rounded" title="Community post">
                 <IconUsers className="w-3 h-3 text-purple-600" />
               </div>
             )}
           </div>
-          <span className="text-[10px] text-gray-400">
-            {new Date(post.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-          </span>
+          <div className="flex items-center gap-1 group/time relative">
+            <span className="text-[10px] text-gray-400">
+              {new Date(post.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+            </span>
+            <div className="absolute bottom-full right-0 mb-1 opacity-0 group-hover/time:opacity-100 transition-opacity pointer-events-none z-10">
+              <div className="bg-gray-900 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">
+                Scheduled based on audience performance data
+              </div>
+            </div>
+          </div>
         </div>
         <p className="text-xs text-gray-600 line-clamp-3 leading-relaxed">
           {post.hook_content || post.content}
         </p>
-        {/* Thread visual indicator showing link is protected */}
+        {/* Thread visual indicator */}
         {isThread && (
           <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200/50">
             <div className="flex items-center gap-1">
@@ -271,6 +293,15 @@ function PostCard({ post, onClick }) {
             <span className="text-[10px] text-blue-600 font-medium">+ Reply with link (protected reach)</span>
           </div>
         )}
+        {/* Lifecycle bar */}
+        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-100">
+          {lifecycleSteps.map((step, i) => (
+            <div key={step} className="flex items-center gap-0.5" title={step}>
+              <span className={`text-[8px] ${i <= lifecycle ? 'opacity-100' : 'opacity-30'}`}>{lifecycleIcons[i]}</span>
+              {i < lifecycleSteps.length - 1 && <span className={`text-[8px] ${i < lifecycle ? 'text-gray-400' : 'text-gray-200'}`}>→</span>}
+            </div>
+          ))}
+        </div>
       </div>
     </button>
   );

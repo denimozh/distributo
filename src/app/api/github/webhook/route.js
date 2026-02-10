@@ -69,7 +69,7 @@ export async function POST(request) {
       autoGenerate: true,
       autoPost: false,
       platforms: ['x'],
-      commitFilters: ['feat', 'fix', 'launch'],
+      commitFilters: ['all'],
       tone: 'casual',
     };
 
@@ -443,21 +443,18 @@ async function handleIssuesEvent(data, repo, settings) {
 // HELPER FUNCTIONS
 // ==========================================
 
-// Check if commit should be skipped (boring commits)
+// Check if commit should be skipped (ONLY truly automated/useless commits)
+// Indie hackers use short messages like "fix", "stuff", "ants" — the DIFF is what matters
 function shouldSkipCommit(message) {
-  const lowerMessage = message.toLowerCase();
-  
-  // Skip patterns
   const skipPatterns = [
-    /^merge/i,
-    /^bump/i,
-    /^update.*dependencies/i,
-    /^update.*lock/i,
+    /^merge\s+(branch|pull|remote)/i,
+    /^Merge pull request/i,
+    /^bump.*version/i,
+    /^update.*lock\s*file/i,
+    /^update.*package-lock/i,
     /^chore\(deps\)/i,
-    /^wip$/i,
-    /^typo/i,
-    /^lint/i,
-    /^format/i,
+    /^auto-generated/i,
+    /^initial commit$/i,
   ];
   
   return skipPatterns.some(pattern => pattern.test(message));
