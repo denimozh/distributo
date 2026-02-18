@@ -4,30 +4,37 @@ import { NextResponse } from 'next/server';
 export async function GET(request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/onboarding';
+  const next = searchParams.get('next') ?? '/dashboard';
 
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     
     if (!error) {
-      // Check if user has completed onboarding
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
+        // Check if profile exists
         const { data: profile } = await supabase
           .from('profiles')
-          .select('onboarding_completed')
+          .select('id')
           .eq('id', user.id)
           .single();
 
-        // Redirect to dashboard if onboarding is complete, otherwise onboarding
-        const redirectTo = profile?.onboarding_completed ? '/dashboard' : '/onboarding';
-        return NextResponse.redirect(`${origin}${redirectTo}`);
+        // Create profile if doesn't exist
+        if (!profile) {
+          await supabase.from('profiles').insert({
+            id: user.id,
+            email: user.email,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name,
+            avatar_url: user.user_metadata?.avatar_url,
+          });
+        }
+
+        return NextResponse.redirect(`${origin}${next}`);
       }
     }
   }
 
-  // Return the user to an error page with instructions
   return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
 }
