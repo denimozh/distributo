@@ -1,18 +1,16 @@
-import { Inter } from 'next/font/google';
-import './globals.css';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+import './globals.css'
 
 export const metadata = {
-  title: 'Distributo - Find Your Winning Content Formula',
-  description: 'Stop guessing which content works. Know exactly which hooks, formats, and angles convert for YOUR audience.',
-  // ... rest of metadata
-};
+  title: 'Experiment Engine | Find Your Winning Content Formula',
+  description: 'AI-powered creative experiments that find what works for your audience',
+}
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans`}>{children}</body>
+      <body className="antialiased">
+        {children}
+      </body>
     </html>
-  );
+  )
 }

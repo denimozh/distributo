@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
@@ -7,7 +8,29 @@ export async function GET(request) {
   const next = searchParams.get('next') ?? '/dashboard';
 
   if (code) {
-    const supabase = await createClient();
+    const cookieStore = await cookies();
+    
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options)
+              );
+            } catch {
+              // Called from Server Component
+            }
+          },
+        },
+      }
+    );
+
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     
     if (!error) {
@@ -17,7 +40,7 @@ export async function GET(request) {
         // Check if profile exists
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id')
+          .select('id, onboarding_completed')
           .eq('id', user.id)
           .single();
 
@@ -28,7 +51,16 @@ export async function GET(request) {
             email: user.email,
             full_name: user.user_metadata?.full_name || user.user_metadata?.name,
             avatar_url: user.user_metadata?.avatar_url,
+            credits: 5, // Free starter credits
           });
+          
+          // New user - redirect to onboarding
+          return NextResponse.redirect(`${origin}/onboarding`);
+        }
+
+        // Existing user - check onboarding status
+        if (!profile.onboarding_completed) {
+          return NextResponse.redirect(`${origin}/onboarding`);
         }
 
         return NextResponse.redirect(`${origin}${next}`);
