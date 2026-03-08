@@ -339,9 +339,9 @@ async function uploadToStorage(filePath, destPath) {
   // For local dev, return a file:// URL
   // In production, upload to Supabase/S3/etc
   
-  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const { createClient } = require('@supabase/supabase-js');
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     
     const fileBuffer = await fs.readFile(filePath);
     const { error } = await supabase.storage
