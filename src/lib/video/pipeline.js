@@ -84,25 +84,31 @@ export async function generateCompleteVideo({
       throw new Error(`Video generation failed: ${videoResult.error}`);
     }
 
-    // Step 5: Mux audio onto video
-    updateProgress("mux", "Combining audio and video");
-    const muxResult = await muxAudioVideo({
-      videoUrl: videoResult.videoUrl,
-      audioUrl: audioResult.audioUrl,
-      userId,
-    });
+    // Step 5: Mux audio onto video (skip if audio failed)
+    let finalVideoUrl = videoResult.videoUrl;
+    
+    if (audioResult.success && audioResult.audioUrl) {
+      updateProgress("mux", "Combining audio and video");
+      const muxResult = await muxAudioVideo({
+        videoUrl: videoResult.videoUrl,
+        audioUrl: audioResult.audioUrl,
+        userId,
+      });
 
-    if (!muxResult.success) {
-      throw new Error(`Audio mux failed: ${muxResult.error}`);
+      if (muxResult.success) {
+        finalVideoUrl = muxResult.videoUrl;
+      } else {
+        console.warn("[Pipeline] Audio mux failed, using video without audio:", muxResult.error);
+      }
+    } else {
+      console.log("[Pipeline] Skipping mux - no audio available");
     }
-
-    let finalVideoUrl = muxResult.videoUrl;
 
     // Step 6: Add product footage if provided (hook + demo composite)
     if (hasProductFootage && productFootageUrl) {
       updateProgress("composite", "Adding product footage");
       const compositeResult = await compositeWithProductFootage({
-        hookVideoUrl: muxResult.videoUrl,
+        hookVideoUrl: finalVideoUrl,
         productFootageUrl,
         userId,
       });
@@ -624,6 +630,9 @@ async function storeAudioFile(audioBuffer, userId) {
  * Upload final video to Supabase Storage
  */
 async function uploadToSupabase({ videoUrl, userId, campaignId }) {
+  console.log(`[Upload] Starting upload for campaign ${campaignId}`);
+  console.log(`[Upload] Source URL: ${videoUrl}`);
+  
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -631,7 +640,11 @@ async function uploadToSupabase({ videoUrl, userId, campaignId }) {
 
   // Download video from external URL
   const response = await fetch(videoUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download video: ${response.status} ${response.statusText}`);
+  }
   const videoBuffer = await response.arrayBuffer();
+  console.log(`[Upload] Downloaded ${videoBuffer.byteLength} bytes`);
 
   const filename = `${userId}/${campaignId}/${Date.now()}.mp4`;
 
@@ -650,6 +663,7 @@ async function uploadToSupabase({ videoUrl, userId, campaignId }) {
     .from("videos")
     .getPublicUrl(filename);
 
+  console.log(`[Upload] Complete: ${publicUrl}`);
   return { publicUrl };
 }
 

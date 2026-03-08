@@ -31,6 +31,10 @@ app.get('/health', (req, res) => {
 app.post('/mux', async (req, res) => {
   const { video_url, audio_url, output_format = 'mp4', resolution = '1080x1920', fps = 30 } = req.body;
 
+  console.log(`[Mux] Request received`);
+  console.log(`[Mux] Video URL: ${video_url}`);
+  console.log(`[Mux] Audio URL: ${audio_url}`);
+
   if (!video_url || !audio_url) {
     return res.status(400).json({ error: 'video_url and audio_url required' });
   }
@@ -50,9 +54,10 @@ app.post('/mux', async (req, res) => {
     await downloadFile(video_url, videoPath);
     await downloadFile(audio_url, audioPath);
 
-    // Mux audio onto video
+    // Mux audio onto video with memory-optimized settings
+    // Scale to 1080x1920, limit threads to prevent OOM
     console.log(`[Mux ${workId}] Muxing audio...`);
-    const ffmpegCmd = `ffmpeg -y -i "${videoPath}" -i "${audioPath}" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest "${outputPath}"`;
+    const ffmpegCmd = `ffmpeg -y -threads 2 -i "${videoPath}" -i "${audioPath}" -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2" -c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -map 0:v:0 -map 1:a:0 -shortest -movflags +faststart "${outputPath}"`;
     
     await execAsync(ffmpegCmd);
 
@@ -105,9 +110,10 @@ app.post('/captions', async (req, res) => {
     const assContent = generateASSCaptions(script, duration, style);
     await fs.writeFile(assPath, assContent);
 
-    // Burn captions using FFmpeg
+    // Burn captions using FFmpeg with memory-optimized settings
+    // Scale to 1080x1920 (9:16), use faster preset, limit threads
     console.log(`[Captions ${workId}] Burning captions...`);
-    const ffmpegCmd = `ffmpeg -y -i "${videoPath}" -vf "ass=${assPath}" -c:a copy "${outputPath}"`;
+    const ffmpegCmd = `ffmpeg -y -threads 2 -i "${videoPath}" -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,ass=${assPath}" -c:v libx264 -preset veryfast -crf 23 -c:a copy -movflags +faststart "${outputPath}"`;
     
     await execAsync(ffmpegCmd);
 
@@ -261,10 +267,15 @@ app.post('/poster', async (req, res) => {
 // ===========================================
 
 async function downloadFile(url, destPath) {
+  console.log(`[Download] Fetching: ${url}`);
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  if (!response.ok) {
+    console.error(`[Download] Failed: ${url} - Status: ${response.status} ${response.statusText}`);
+    throw new Error(`Download failed: ${response.status} for URL: ${url}`);
+  }
   const buffer = Buffer.from(await response.arrayBuffer());
   await fs.writeFile(destPath, buffer);
+  console.log(`[Download] Saved: ${destPath} (${buffer.length} bytes)`);
 }
 
 async function getVideoDuration(videoPath) {
