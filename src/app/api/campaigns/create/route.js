@@ -25,6 +25,7 @@ export async function POST(request) {
       productName,
       productBenefit,
       targetAudience,
+      customerReviews,
       productUrl,
       avatarId,
       contentType,
@@ -32,6 +33,8 @@ export async function POST(request) {
       format = "talking_head",
       duration = 15,
       authenticityMode = "natural",
+      productFootageUrl = null,
+      hasProductFootage = false,
     } = body;
 
     // Validate required fields
@@ -43,7 +46,7 @@ export async function POST(request) {
     }
 
     // Calculate required credits based on video count and duration
-    const videoCount = Math.min(hookCount, 5);
+    const videoCount = 1; // Generate just 1 video for testing
     const videos = Array(videoCount).fill({
       duration,
       format,
@@ -86,6 +89,7 @@ export async function POST(request) {
         total_videos: videoCount,
         format,
         authenticity_mode: authenticityMode,
+        product_footage_url: productFootageUrl,
       })
       .select()
       .single();
@@ -103,13 +107,17 @@ export async function POST(request) {
 
     // Start async generation (don't await)
     generateCampaignContent(campaign.id, {
+      userId,
       productName,
       productBenefit,
       targetAudience,
+      customerReviews,
       productUrl,
       avatarId,
       contentType,
       hookCount,
+      hasProductFootage,
+      productFootageUrl,
     }).catch(err => {
       console.error("[Campaign] Generation failed:", err);
       supabase
@@ -139,40 +147,85 @@ export async function POST(request) {
 
 async function generateCampaignContent(campaignId, config) {
   const {
+    userId,
     productName,
     productBenefit,
     targetAudience,
+    customerReviews,
     contentType,
     hookCount,
     avatarId,
+    hasProductFootage,
+    productFootageUrl,
   } = config;
 
   try {
-    // Step 1: Generate hooks using Claude
-    console.log(`[Campaign ${campaignId}] Generating ${hookCount} hooks...`);
+    // Get user's business type from profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("business_type")
+      .eq("id", userId)
+      .single();
+    
+    const businessType = profile?.business_type || 'ecommerce';
+    
+    // Fetch winning patterns for this user (from Week 3 onwards)
+    const { data: winningPatterns } = await supabase
+      .from("winning_patterns")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .gte("confidence_score", 0.6)
+      .order("avg_engagement_rate", { ascending: false })
+      .limit(5);
+    
+    // Step 1: Generate hooks using Claude with pillars
+    console.log(`[Campaign ${campaignId}] Generating ${hookCount} hooks with pillars...`);
     
     const hooks = await generateHooks({
       productName,
       productBenefit,
       targetAudience,
+      customerReviews,
       contentType,
       count: hookCount,
+      businessType,
+      winningPatterns: winningPatterns || [],
     });
 
-    // Save hooks to database
+    // Save hooks to database with pillar info
     const hookRecords = hooks.map(hook => ({
       campaign_id: campaignId,
-      hook_type: hook.type,
+      hook_type: hook.type || hook.deliveryMechanism,
+      pillar_id: hook.pillarId,
+      pillar_name: hook.pillarName,
+      angle: hook.angle,
+      delivery_mechanism: hook.deliveryMechanism,
       script: hook.script,
       predicted_score: hook.predictedScore,
     }));
 
     await supabase.from("hooks").insert(hookRecords);
+    
+    // Save content angles for tracking
+    if (hooks.some(h => h.pillarId)) {
+      const angleRecords = hooks.map(hook => ({
+        user_id: userId,
+        campaign_id: campaignId,
+        pillar_id: hook.pillarId || 'discovery',
+        pillar_name: hook.pillarName || 'Discovery',
+        angle_template: hook.angle || '',
+        angle_personalized: hook.angle || '',
+        delivery_mechanism: hook.deliveryMechanism || 'discovery',
+      }));
+      
+      await supabase.from("content_angles").insert(angleRecords).select();
+    }
 
-    // Step 2: Select top 5 hooks for video generation
+    // Step 2: Select top 1 hook for video generation (testing mode)
     const topHooks = hooks
       .sort((a, b) => b.predictedScore - a.predictedScore)
-      .slice(0, 5);
+      .slice(0, 1); // Just 1 video for testing
 
     // Step 3: Generate videos for top hooks
     console.log(`[Campaign ${campaignId}] Generating ${topHooks.length} videos...`);
@@ -188,24 +241,40 @@ async function generateCampaignContent(campaignId, config) {
 
     for (const hook of topHooks) {
       try {
-        // Generate video (or create placeholder for now)
-        const videoResult = await generateVideo({
-          avatarImageUrl: avatar?.image_url,
+        // Use the complete pipeline with audio and captions
+        const { generateCompleteVideo } = await import("@/lib/video/pipeline");
+        
+        const videoResult = await generateCompleteVideo({
           script: hook.script,
           hookType: hook.type,
+          avatar: avatar || {},
+          productName,
+          productBenefit,
+          targetAudience,
+          userId,
+          campaignId,
+          options: {
+            addCaptions: true,
+            captionStyle: "tiktok",
+            hasProductFootage: hasProductFootage && !!productFootageUrl,
+            productFootageUrl: productFootageUrl,
+          },
         });
 
         // Save video record
         await supabase.from("videos").insert({
           campaign_id: campaignId,
-          user_id: config.userId,
+          user_id: userId,
           title: `${hook.type} Hook - ${productName}`,
           script: hook.script,
           hook_type: hook.type,
           avatar_id: avatarId,
           video_url: videoResult.videoUrl || null,
+          audio_url: videoResult.audioUrl || null,
           status: videoResult.success ? "ready" : "pending",
-          duration: 10,
+          duration: videoResult.duration || 5,
+          has_audio: videoResult.hasAudio || false,
+          has_captions: videoResult.hasCaptions || false,
         });
 
         videosGenerated++;
@@ -245,44 +314,111 @@ async function generateCampaignContent(campaignId, config) {
 }
 
 // ===========================================
-// HOOK GENERATION (Claude)
+// CONTENT GENERATION (Claude with Pillars)
 // ===========================================
 
-async function generateHooks({ productName, productBenefit, targetAudience, contentType, count }) {
-  const hookTypes = getHookTypesForContentType(contentType);
-  const hooksPerType = Math.ceil(count / hookTypes.length);
+async function generateHooks({ productName, productBenefit, targetAudience, contentType, count, customerReviews, businessType, winningPatterns }) {
+  // Import pillars system
+  const { selectCampaignAngles, DELIVERY_MECHANISMS, getPillarsForBusiness } = await import("@/lib/content/pillars");
+  
+  // Get content angles based on business type
+  const selectedAngles = selectCampaignAngles(businessType || 'ecommerce', Math.ceil(count / 5));
+  const pillars = getPillarsForBusiness(businessType || 'ecommerce');
+  
+  // Build winning patterns injection if available
+  let winningPatternsSection = '';
+  if (winningPatterns && winningPatterns.length > 0) {
+    winningPatternsSection = `
+=== WINNING PATTERNS (from your past performance data - USE THESE) ===
+${winningPatterns.map(p => `- ${p.pattern_type}: "${p.pattern_value}" (${Math.round(p.avg_engagement_rate * 100)}% engagement)`).join('\n')}
 
-  const prompt = `You are an expert UGC content strategist. Generate scroll-stopping hooks for TikTok/Instagram Reels.
+Incorporate these proven patterns into your scripts. They work for this audience.
+`;
+  }
+
+  // Full script architecture based on 48 Laws of UGC + Content Pillars
+  const prompt = `You are an expert UGC content strategist creating hooks for TikTok/Instagram Reels.
+
+=== CRITICAL PRINCIPLES (NEVER VIOLATE) ===
+1. NEVER mention the product in the first sentence. Ever.
+2. Open with IDENTITY SIGNAL or PAIN CONFESSION, not the solution.
+3. 60% of the script = problem, failed attempts, frustration
+4. 40% = discovery + mechanism + specific result + friend recommendation
+5. Specific numbers beat vague claims ("23 pounds in 11 weeks" not "lost weight")
+6. CTA must sound like a friend recommendation, never a sales pitch
+
+=== BRIEF ===
 
 PRODUCT: ${productName}
-BENEFIT: ${productBenefit}
-TARGET AUDIENCE: ${targetAudience || "General consumers"}
+CORE BENEFIT: ${productBenefit}
+TARGET AUDIENCE: ${targetAudience || "People interested in this product category"}
+BUSINESS TYPE: ${businessType || 'ecommerce'}
 
-Generate ${count} unique hooks across these types: ${hookTypes.join(", ")}
+${customerReviews ? `VOICE REFERENCE (use exact phrases from these real customer words):
+${customerReviews}` : ''}
 
-For each hook:
-1. Make it conversational and authentic (like a real person talking to camera)
-2. Create curiosity or emotional connection in the first 3 seconds
-3. Keep it under 15 words
-4. Don't sound like an ad - sound like a friend sharing a discovery
+${winningPatternsSection}
 
-HOOK TYPES:
-- curiosity: "Wait, did you know..." / "Nobody talks about this but..."
-- pov: "POV: you just discovered..." / "POV: when you finally find..."
-- story: "So I tried this thing and..." / "Story time: I was struggling with..."
-- question: "Is it just me or..." / "Why isn't anyone talking about..."
-- direct: "Stop scrolling if you..." / "You need to hear this..."
+=== CONTENT PILLARS (the strategic themes - WHAT you say) ===
 
-Return as JSON array:
+${pillars.map(p => `${p.name.toUpperCase()}: ${p.description}`).join('\n')}
+
+=== CONTENT ANGLES TO USE ===
+
+${selectedAngles.map((a, i) => `${i + 1}. [${a.pillarName}] ${a.angle}`).join('\n')}
+
+=== DELIVERY MECHANISMS (HOW you present each angle) ===
+
+${Object.entries(DELIVERY_MECHANISMS).map(([key, m]) => `${key.toUpperCase()}: ${m.description}`).join('\n')}
+
+=== THE 5-SECTION SCRIPT STRUCTURE ===
+
+SECTION 1 — IDENTITY HOOK (first 1-2 seconds, NO product mention):
+Address the target audience with their specific situation.
+- "Hey if you're a [specific person]..."
+- "If you've been struggling with [specific pain]..."
+
+SECTION 2 — PAIN + FAILED ATTEMPTS (60% of script):
+- State the EMOTIONAL pain, not just functional
+- List 2-3 specific things they tried that didn't work
+- Use language the audience actually uses
+
+SECTION 3 — MECHANISM REVEAL (10%):
+Introduce what's DIFFERENT about this solution — the mechanism, not the product name.
+
+SECTION 4 — SPECIFIC TRANSFORMATION (20%):
+Paint the vivid after-state with SPECIFIC odd numbers (23, 47, 11 — they signal real experience).
+
+SECTION 5 — FRIEND RECOMMENDATION CTA (10%):
+"I genuinely think you should try this" NOT "click the link below"
+
+=== HARD CONSTRAINTS ===
+- Each hook script should be 25-40 words total
+- BANNED WORDS: "game changer", "obsessed", "amazing", "incredible", "revolutionary", "love this", "you need this", "link in bio"
+- Use imperfect language: contractions, casual phrasing, sentence fragments
+- Include ONE small complaint or caveat (perfect reviews sound fake)
+- No hashtags or emojis
+- Include skepticism preemption where natural
+
+=== OUTPUT ===
+
+Generate ${count} unique hook scripts. Use the content angles provided above.
+Each script should combine ONE content angle with ONE delivery mechanism.
+
+Return as JSON array only, no other text:
 [
   {
-    "type": "curiosity",
-    "script": "Wait, did you know most skincare routines are actually making your acne worse?",
-    "predictedScore": 0.85
+    "pillarId": "myths",
+    "pillarName": "Myth Busting",
+    "angle": "The biggest lie about [category]",
+    "deliveryMechanism": "discovery",
+    "script": "Nobody told me [category] works this way until I spent $400 learning the hard way. I tried [failed attempt 1], [failed attempt 2], nothing. Then I found something that actually [mechanism]. 23 [units] in 11 weeks. Genuinely think you should check it out.",
+    "predictedScore": 0.85,
+    "why": "Strong identity hook, specific failed attempts, mechanism reveal, specific number"
   }
 ]
 
-Generate ${count} hooks total, distributed across the hook types. Predict scores from 0.5-1.0 based on viral potential.`;
+Predict scores 0.6-0.95 based on: identity signal strength, emotional pain depth, specificity of numbers, authenticity of language.`;
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
@@ -304,7 +440,12 @@ Generate ${count} hooks total, distributed across the hook types. Predict scores
   }
 
   const hooks = JSON.parse(jsonMatch[0]);
-  return hooks;
+  
+  // Map to expected format (backwards compatible)
+  return hooks.map(h => ({
+    ...h,
+    type: h.deliveryMechanism || 'discovery', // For backwards compatibility
+  }));
 }
 
 // ===========================================
@@ -354,19 +495,34 @@ async function generateVideo({ avatarImageUrl, script, hookType }) {
 
     const ugcPrompt = buildUGCPrompt(script, hookType);
 
-    const result = await fal.subscribe("fal-ai/kling-video/v1.6/pro/image-to-video", {
+    // Use Kling 2.1 Pro (better quality than 1.6)
+    const result = await fal.subscribe("fal-ai/kling-video/v2.1/pro/image-to-video", {
       input: {
         prompt: ugcPrompt,
         image_url: avatarImageUrl,
-        duration: "10",
+        duration: "5", // 5 seconds - optimal for hooks, halves cost
         aspect_ratio: "9:16",
       },
       logs: true,
+      onQueueUpdate: (update) => {
+        if (update.status === "IN_PROGRESS") {
+          console.log("[Video] Generation in progress...", update.logs);
+        }
+      },
+    });
+
+    // New fal.ai client returns result.data.video.url
+    const videoUrl = result?.data?.video?.url || result?.video?.url || null;
+    
+    console.log("[Video] Generation complete:", { 
+      hasData: !!result?.data,
+      hasVideo: !!result?.video,
+      videoUrl 
     });
 
     return {
-      success: true,
-      videoUrl: result.video?.url,
+      success: !!videoUrl,
+      videoUrl: videoUrl,
     };
 
   } catch (error) {
@@ -380,28 +536,89 @@ async function generateVideo({ avatarImageUrl, script, hookType }) {
 }
 
 function buildUGCPrompt(script, hookType) {
-  const deliveryStyles = {
-    curiosity: "intrigued expression, eyebrows slightly raised, leaning in",
-    pov: "relatable, knowing look, slight head tilt",
-    story: "animated, expressive, setting the scene",
-    question: "genuinely curious, engaging eye contact",
-    direct: "confident, direct eye contact, commanding attention",
+  // Narrative structure types (not delivery styles)
+  const narrativeStructures = {
+    "problem-solution": {
+      camera: "Medium close-up, slight push-in during key moment",
+      action: "Person realizes something, shares discovery with viewer",
+      delivery: "Shifts from frustrated to relieved expression",
+    },
+    "transformation": {
+      camera: "Close-up face, stable handheld feel",
+      action: "Person reflects on change, genuine emotional beat",
+      delivery: "Warm, reflective, slight smile building",
+    },
+    "comparison": {
+      camera: "Medium shot, casual framing",
+      action: "Person weighs options, lands on preference",
+      delivery: "Thoughtful consideration, then decisive nod",
+    },
+    "discovery": {
+      camera: "Close-up reaction shot, slight movement",
+      action: "Person encounters something new, processes it",
+      delivery: "Curious expression shifting to impressed",
+    },
+    "social-proof": {
+      camera: "Medium close-up, direct to camera",
+      action: "Person shares experience confidently",
+      delivery: "Assured, helpful, like recommending to a friend",
+    },
+    // Fallback for old hook types
+    "curiosity": {
+      camera: "Close-up, slight lean toward camera",
+      action: "Person shares interesting information",
+      delivery: "Eyebrows raised slightly, engaged expression",
+    },
+    "direct": {
+      camera: "Medium close-up, stable frame",
+      action: "Person makes a clear point",
+      delivery: "Confident, direct eye contact",
+    },
+    "story": {
+      camera: "Medium shot, casual handheld",
+      action: "Person recounts an experience",
+      delivery: "Animated, expressive, natural gestures",
+    },
+    "pov": {
+      camera: "Close-up, intimate framing",
+      action: "Person relates to viewer experience",
+      delivery: "Knowing look, slight head tilt",
+    },
+    "question": {
+      camera: "Close-up, direct address",
+      action: "Person poses a question to viewer",
+      delivery: "Curious, inviting response",
+    },
   };
 
-  const delivery = deliveryStyles[hookType] || deliveryStyles.curiosity;
+  const structure = narrativeStructures[hookType] || narrativeStructures["discovery"];
 
-  return `UGC-style video, shot on iPhone 15 Pro Max.
-Natural window light only, off-center imperfect framing.
-Visible pores, natural skin texture, facial asymmetry, controlled flyaways.
+  // Build prompt: Camera → Action → Delivery → Physical → Lighting → Motion → Imperfection
+  return `${structure.camera}, single continuous shot, vertical 9:16 smartphone selfie video.
 
-The person looks at camera and speaks naturally: "${script}"
+Subject action: ${structure.action}
 
-Delivery: ${delivery}
-Tone: Conversational, authentic, like talking to a friend.
-NOT robotic, NOT scripted-sounding, NOT too polished.
+Delivery style: ${structure.delivery}
 
-This should look like real user-generated content, not an ad.`;
+Physical: Young adult, natural appearance, casual clothing, relaxed posture. Visible pores, natural skin texture with slight color variation. Hair moves naturally with head movement.
+
+Lighting: Soft natural daylight from window, warm color temperature. Slight soft shadows acceptable. Mild grain, slight softness like iPhone footage.
+
+Motion constraints: Subtle natural movement only. Small head tilts, gentle hand gestures. Natural blinking with micro-expressions. One small breath before speaking. No exaggerated expressions.
+
+Imperfection cues: Slight camera shake like handheld phone. Imperfect framing typical of authentic user-generated content. Not overly polished. Relaxed, unrehearsed energy. Looks like talking to a friend, not performing.
+
+Camera behavior: Handheld stability with micro-movements. Natural breathing room in frame. Person positioned in upper 60% of frame.`;
 }
+
+// New hook types for Claude to use
+const HOOK_TYPES = [
+  "problem-solution",
+  "transformation", 
+  "comparison",
+  "discovery",
+  "social-proof",
+];
 
 // ===========================================
 // HELPERS

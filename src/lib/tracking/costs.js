@@ -249,9 +249,6 @@ async function createMarginAlert(userId, margin, severity, supabase) {
  * Get user's costs for current month
  */
 export async function getUserMonthlyCosts(userId) {
-
-// Alias for backwards compatibility
-export const trackApiCost = trackCost;
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -431,10 +428,14 @@ export function estimateVideoCost({
 // EXPORTS
 // ===========================================
 
+// Alias for backwards compatibility
+export const trackApiCost = trackCost;
+
 export default {
   API_COSTS,
   PLAN_PRICES,
   trackCost,
+  trackApiCost,
   trackKlingCost,
   trackElevenLabsCost,
   trackClaudeCost,

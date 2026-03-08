@@ -1,411 +1,181 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-
-// ===========================================
-// BILLING PAGE
-// ===========================================
+import { IconCheck, IconChevronRight, IconZap } from "@/components/Icons";
 
 export default function BillingPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
-
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [usage, setUsage] = useState(null);
-
-  // Check for success/error params
-  const success = searchParams.get("success");
-  const canceled = searchParams.get("canceled");
-  const creditsSuccess = searchParams.get("credits");
 
   useEffect(() => {
-    loadBillingData();
+    loadProfile();
   }, []);
 
-  const loadBillingData = async () => {
+  const loadProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+    if (!user) return;
 
-    // Get profile with billing info
-    const { data: profileData } = await supabase
+    const { data } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user.id)
       .single();
 
-    setProfile(profileData);
-
-    // Get usage stats
-    const { data: usageData } = await supabase
-      .from("credit_transactions")
-      .select("amount, transaction_type, created_at")
-      .eq("user_id", user.id)
-      .gte("created_at", getMonthStart())
-      .order("created_at", { ascending: false });
-
-    const spent = usageData
-      ?.filter(t => t.amount < 0)
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0) || 0;
-
-    setUsage({
-      spent,
-      transactions: usageData || [],
-    });
-
+    setProfile(data);
     setLoading(false);
-  };
-
-  const handleUpgrade = async (planId) => {
-    setUpgrading(planId);
-
-    try {
-      const response = await fetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId }),
-      });
-
-      const data = await response.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || "Failed to start checkout");
-      }
-    } catch (error) {
-      alert("Failed to start checkout");
-    }
-
-    setUpgrading(null);
-  };
-
-  const handleBuyCredits = async (packId) => {
-    setUpgrading(packId);
-
-    try {
-      const response = await fetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId, type: "credits" }),
-      });
-
-      const data = await response.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || "Failed to start checkout");
-      }
-    } catch (error) {
-      alert("Failed to start checkout");
-    }
-
-    setUpgrading(null);
-  };
-
-  const handleManageSubscription = () => {
-    window.location.href = "/api/billing/portal";
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full" />
+      <div className="flex items-center justify-center h-full">
+        <div className="w-6 h-6 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  const currentPlan = profile?.plan || "free";
-  const credits = profile?.credits || 0;
-  const creditsUsed = profile?.credits_used || 0;
+  const plans = [
+    {
+      name: "Starter",
+      price: 49,
+      videos: 30,
+      features: ["30 AI videos/month", "TikTok posting", "Basic analytics"],
+      current: profile?.plan === "starter",
+    },
+    {
+      name: "Growth",
+      price: 149,
+      videos: 55,
+      features: ["55 AI videos/month", "TikTok + Instagram", "Advanced analytics", "Priority support"],
+      current: profile?.plan === "growth",
+      popular: true,
+    },
+    {
+      name: "Scale",
+      price: 299,
+      videos: 115,
+      features: ["115 AI videos/month", "All platforms", "Full analytics", "Custom avatars", "API access"],
+      current: profile?.plan === "scale",
+    },
+  ];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      {/* Success/Error Messages */}
-      {success && (
-        <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400">
-          🎉 Subscription activated! Your credits are ready to use.
-        </div>
-      )}
-      {canceled && (
-        <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-yellow-400">
-          Checkout was canceled. No charges were made.
-        </div>
-      )}
-      {creditsSuccess === "success" && (
-        <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400">
-          ✓ Credits added to your account!
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Plan & Billing</h1>
-        <p className="text-zinc-400">Manage your subscription and credits</p>
+    <div className="p-6 max-w-4xl">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+        <Link href="/dashboard/settings" className="hover:text-gray-700">Settings</Link>
+        <IconChevronRight className="w-4 h-4" />
+        <span className="text-gray-900">Billing</span>
       </div>
 
-      {/* Current Plan Card */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-white">
-                {currentPlan === "free" ? "Free Trial" : `${currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} Plan`}
-              </h2>
-              {profile?.subscription_status === "active" && (
-                <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded-full">
-                  Active
-                </span>
-              )}
-            </div>
-            <p className="text-sm text-zinc-400 mt-1">
-              {currentPlan === "free" 
-                ? "Upgrade to unlock all features" 
-                : "Your subscription renews monthly"}
-            </p>
-          </div>
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold text-gray-900">Billing & Credits</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Manage your subscription and credits</p>
+      </div>
 
-          {/* Credits Display */}
+      {/* Current Usage */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500">Current Balance</p>
+            <p className="text-3xl font-semibold text-gray-900">{profile?.credits || 0} <span className="text-lg font-normal text-gray-500">credits</span></p>
+          </div>
           <div className="text-right">
-            <div className="text-3xl font-bold text-white">{credits}</div>
-            <div className="text-sm text-zinc-400">credits remaining</div>
+            <p className="text-sm text-gray-500">Current Plan</p>
+            <p className="text-lg font-medium text-gray-900 capitalize">{profile?.plan || "Free"}</p>
           </div>
         </div>
-
-        {/* Credits Bar */}
-        <div className="mt-6">
-          <div className="flex justify-between text-sm mb-2">
-            <span className="text-zinc-400">{creditsUsed} used this month</span>
-            <span className="text-zinc-400">{credits + creditsUsed} total</span>
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+            <span>Credits used this month</span>
+            <span>{profile?.credits_used || 0} / {profile?.credits || 0}</span>
           </div>
-          <div className="w-full h-3 bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-500"
-              style={{ width: `${Math.min((credits / (credits + creditsUsed || 1)) * 100, 100)}%` }}
+              className="h-full bg-violet-600 rounded-full"
+              style={{ width: `${Math.min(((profile?.credits_used || 0) / (profile?.credits || 1)) * 100, 100)}%` }}
             />
           </div>
         </div>
-
-        {/* Manage Button */}
-        {profile?.stripe_customer_id && (
-          <button
-            onClick={handleManageSubscription}
-            className="mt-4 text-sm text-purple-400 hover:text-purple-300"
-          >
-            Manage subscription →
-          </button>
-        )}
       </div>
 
       {/* Plans */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-white mb-4">
-          {currentPlan === "free" ? "Choose a Plan" : "Change Plan"}
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {PLANS.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              isCurrentPlan={currentPlan === plan.id}
-              onSelect={() => handleUpgrade(plan.id)}
-              loading={upgrading === plan.id}
-            />
-          ))}
-        </div>
+      <h2 className="text-sm font-medium text-gray-900 mb-3">Plans</h2>
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {plans.map((plan) => (
+          <div
+            key={plan.name}
+            className={`bg-white rounded-lg border-2 p-4 relative ${
+              plan.current ? "border-violet-600" : plan.popular ? "border-violet-200" : "border-gray-200"
+            }`}
+          >
+            {plan.popular && !plan.current && (
+              <span className="absolute -top-2.5 left-4 px-2 py-0.5 bg-violet-600 text-white text-xs font-medium rounded">
+                Popular
+              </span>
+            )}
+            {plan.current && (
+              <span className="absolute -top-2.5 left-4 px-2 py-0.5 bg-violet-600 text-white text-xs font-medium rounded">
+                Current
+              </span>
+            )}
+            <h3 className="text-lg font-semibold text-gray-900">{plan.name}</h3>
+            <div className="mt-2 mb-4">
+              <span className="text-3xl font-bold text-gray-900">${plan.price}</span>
+              <span className="text-sm text-gray-500">/month</span>
+            </div>
+            <ul className="space-y-2 mb-4">
+              {plan.features.map((feature, i) => (
+                <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
+                  <IconCheck className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  {feature}
+                </li>
+              ))}
+            </ul>
+            <button
+              disabled={plan.current}
+              className={`w-full py-2 text-sm font-medium rounded-lg transition-colors ${
+                plan.current
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-violet-600 text-white hover:bg-violet-700"
+              }`}
+            >
+              {plan.current ? "Current Plan" : "Upgrade"}
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* Credit Packs */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-white mb-2">Need More Credits?</h3>
-        <p className="text-sm text-zinc-400 mb-4">Purchase additional credits anytime</p>
-        
-        <div className="grid grid-cols-3 gap-4">
-          {CREDIT_PACKS.map((pack) => (
-            <div
-              key={pack.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors"
-            >
-              <div className="text-2xl font-bold text-white">{pack.credits}</div>
-              <div className="text-sm text-zinc-400">credits</div>
-              <div className="mt-2 text-lg font-semibold text-white">${pack.price}</div>
-              <div className="text-xs text-zinc-500">${pack.perCredit}/credit</div>
-              <button
-                onClick={() => handleBuyCredits(pack.id)}
-                disabled={upgrading === pack.id}
-                className="mt-3 w-full py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors"
-              >
-                {upgrading === pack.id ? "Loading..." : "Buy Now"}
-              </button>
-            </div>
-          ))}
-        </div>
+      <h2 className="text-sm font-medium text-gray-900 mb-3">Credit Packs</h2>
+      <div className="grid grid-cols-3 gap-4">
+        <CreditPack credits={10} price={15} />
+        <CreditPack credits={25} price={35} popular />
+        <CreditPack credits={50} price={65} />
       </div>
-
-      {/* Recent Transactions */}
-      {usage?.transactions.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-zinc-800/50">
-                <tr>
-                  <th className="text-left text-sm font-medium text-zinc-400 px-4 py-3">Date</th>
-                  <th className="text-left text-sm font-medium text-zinc-400 px-4 py-3">Type</th>
-                  <th className="text-right text-sm font-medium text-zinc-400 px-4 py-3">Credits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usage.transactions.slice(0, 10).map((tx, i) => (
-                  <tr key={i} className="border-t border-zinc-800">
-                    <td className="px-4 py-3 text-sm text-zinc-300">
-                      {new Date(tx.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-zinc-300 capitalize">
-                      {tx.transaction_type.replace("_", " ")}
-                    </td>
-                    <td className={`px-4 py-3 text-sm text-right font-medium ${
-                      tx.amount > 0 ? "text-green-400" : "text-red-400"
-                    }`}>
-                      {tx.amount > 0 ? "+" : ""}{tx.amount}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ===========================================
-// PLAN CARD COMPONENT
-// ===========================================
-
-function PlanCard({ plan, isCurrentPlan, onSelect, loading }) {
+function CreditPack({ credits, price, popular }) {
   return (
-    <div className={`relative p-5 rounded-xl border ${
-      plan.popular 
-        ? "border-purple-500 bg-purple-500/5" 
-        : "border-zinc-800 bg-zinc-900"
-    }`}>
-      {plan.popular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded-full">
-          MOST POPULAR
-        </div>
-      )}
-
-      <h4 className="text-lg font-semibold text-white">{plan.name}</h4>
-      
-      <div className="mt-2">
-        <span className="text-3xl font-bold text-white">${plan.price}</span>
-        <span className="text-zinc-400">/mo</span>
-      </div>
-
-      <div className="mt-1 text-sm text-purple-400">
-        {plan.credits} credits/month
-      </div>
-
-      <ul className="mt-4 space-y-2">
-        {plan.features.slice(0, 4).map((feature, i) => (
-          <li key={i} className="text-sm text-zinc-300 flex items-center gap-2">
-            <span className="text-green-400">✓</span>
-            {feature}
-          </li>
-        ))}
-        {plan.features.length > 4 && (
-          <li className="text-sm text-zinc-500">
-            +{plan.features.length - 4} more features
-          </li>
+    <div className={`bg-white rounded-lg border p-4 ${popular ? "border-violet-200" : "border-gray-200"}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-2xl font-semibold text-gray-900">{credits}</span>
+        {popular && (
+          <span className="px-2 py-0.5 bg-violet-100 text-violet-700 text-xs font-medium rounded">Best Value</span>
         )}
-      </ul>
-
-      <button
-        onClick={onSelect}
-        disabled={isCurrentPlan || loading}
-        className={`mt-4 w-full py-2.5 rounded-lg text-sm font-medium transition-colors ${
-          isCurrentPlan
-            ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-            : plan.popular
-            ? "bg-purple-600 hover:bg-purple-500 text-white"
-            : "bg-zinc-800 hover:bg-zinc-700 text-white"
-        }`}
-      >
-        {loading ? "Loading..." : isCurrentPlan ? "Current Plan" : "Upgrade"}
-      </button>
+      </div>
+      <p className="text-sm text-gray-500 mb-3">credits</p>
+      <div className="flex items-center justify-between">
+        <span className="text-lg font-medium text-gray-900">${price}</span>
+        <button className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">
+          Buy
+        </button>
+      </div>
     </div>
   );
-}
-
-// ===========================================
-// DATA
-// ===========================================
-
-const PLANS = [
-  {
-    id: "starter",
-    name: "Starter",
-    price: 49,
-    credits: 25,
-    features: [
-      "20 test videos (5s)",
-      "5 full videos (30s)",
-      "TikTok + Instagram",
-      "5 AI avatars",
-      "Auto-captions",
-    ],
-  },
-  {
-    id: "growth",
-    name: "Growth",
-    price: 99,
-    credits: 70,
-    popular: true,
-    features: [
-      "50 test videos (5s)",
-      "10 full videos (30s)",
-      "Performance insights",
-      "Weekly reports",
-      "10 AI avatars",
-      "Priority support",
-    ],
-  },
-  {
-    id: "scale",
-    name: "Scale",
-    price: 249,
-    credits: 175,
-    features: [
-      "100 test videos (5s)",
-      "25 full videos (30s)",
-      "YouTube posting",
-      "Winner extension",
-      "Unlimited avatars",
-      "Multi-shot ads",
-    ],
-  },
-];
-
-const CREDIT_PACKS = [
-  { id: "small", credits: 10, price: 15, perCredit: "1.50" },
-  { id: "medium", credits: 30, price: 39, perCredit: "1.30" },
-  { id: "large", credits: 100, price: 99, perCredit: "0.99" },
-];
-
-function getMonthStart() {
-  const date = new Date();
-  date.setDate(1);
-  date.setHours(0, 0, 0, 0);
-  return date.toISOString();
 }

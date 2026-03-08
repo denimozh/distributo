@@ -1,531 +1,252 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-
-// ===========================================
-// ANALYTICS DASHBOARD
-// Performance insights and learning loop visualization
-// ===========================================
 
 export default function AnalyticsPage() {
   const supabase = createClient();
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [timeRange, setTimeRange] = useState("7d");
+  const [stats, setStats] = useState({ views: 0, engagement: 0, videosPosted: 0, videosReady: 0, topHook: null });
+  const [hooks, setHooks] = useState([]);
+  const [hasPostedVideos, setHasPostedVideos] = useState(false);
+  const [platforms, setPlatforms] = useState({ tiktok: false, instagram: false });
 
-  useEffect(() => {
-    loadAnalytics();
-  }, [timeRange]);
+  useEffect(() => { loadData(); }, []);
 
-  const loadAnalytics = async () => {
-    setLoading(true);
-
+  const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Load all analytics data
-    const [
-      insightsRes,
-      statsRes,
-      winnersRes,
-      hookPerfRes,
-    ] = await Promise.all([
-      fetch("/api/insights").then(r => r.json()),
-      loadStats(user.id, timeRange),
-      loadWinners(user.id),
-      loadHookPerformance(user.id),
-    ]);
+    const { data: videos } = await supabase.from("videos").select("*");
+    const { data: hookData } = await supabase.from("hooks").select("*");
+    const { data: connections } = await supabase.from("platform_connections").select("platform").eq("user_id", user.id);
 
-    setData({
-      insights: insightsRes,
-      stats: statsRes,
-      winners: winnersRes,
-      hookPerformance: hookPerfRes,
+    if (connections) {
+      setPlatforms({ tiktok: connections.some(c => c.platform === 'tiktok'), instagram: connections.some(c => c.platform === 'instagram') });
+    }
+
+    const postedVideos = videos?.filter(v => v.posted_at) || [];
+    const readyVideos = videos?.filter(v => v.status === 'ready') || [];
+    
+    setHasPostedVideos(postedVideos.length > 0);
+
+    const totalViews = postedVideos.reduce((sum, v) => sum + (v.views || 0), 0);
+    const avgEngagement = postedVideos.length > 0 ? postedVideos.reduce((sum, v) => sum + (v.engagement_rate || 0), 0) / postedVideos.length : 0;
+
+    const hookStats = {};
+    hookData?.forEach(h => {
+      if (!hookStats[h.hook_type]) hookStats[h.hook_type] = { count: 0, totalScore: 0 };
+      hookStats[h.hook_type].count++;
+      hookStats[h.hook_type].totalScore += h.predicted_score || 0;
     });
 
+    const sortedHooks = Object.entries(hookStats)
+      .map(([type, data]) => ({ type, count: data.count, avgScore: data.totalScore / data.count }))
+      .sort((a, b) => b.avgScore - a.avgScore);
+
+    setStats({
+      views: totalViews,
+      engagement: avgEngagement.toFixed(1),
+      videosPosted: postedVideos.length,
+      videosReady: readyVideos.length,
+      topHook: postedVideos.length > 0 ? sortedHooks[0]?.type : null,
+    });
+    setHooks(sortedHooks);
     setLoading(false);
-  };
-
-  const loadStats = async (userId, range) => {
-    const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    const { data: stats } = await supabase
-      .from("video_stats")
-      .select(`
-        views, likes, saves, shares, watch_time_percent,
-        platform, snapshot_type, snapshot_at,
-        videos!inner (user_id)
-      `)
-      .eq("videos.user_id", userId)
-      .gte("snapshot_at", startDate.toISOString());
-
-    // Aggregate
-    const totals = {
-      views: 0,
-      likes: 0,
-      saves: 0,
-      shares: 0,
-      avgWatchTime: 0,
-    };
-
-    const byPlatform = {};
-
-    for (const stat of stats || []) {
-      totals.views += stat.views || 0;
-      totals.likes += stat.likes || 0;
-      totals.saves += stat.saves || 0;
-      totals.shares += stat.shares || 0;
-
-      if (!byPlatform[stat.platform]) {
-        byPlatform[stat.platform] = { views: 0, saves: 0, count: 0, watchTime: 0 };
-      }
-      byPlatform[stat.platform].views += stat.views || 0;
-      byPlatform[stat.platform].saves += stat.saves || 0;
-      byPlatform[stat.platform].watchTime += stat.watch_time_percent || 0;
-      byPlatform[stat.platform].count++;
-    }
-
-    // Calculate averages
-    for (const platform of Object.keys(byPlatform)) {
-      byPlatform[platform].avgWatchTime = byPlatform[platform].watchTime / byPlatform[platform].count;
-      byPlatform[platform].saveRate = byPlatform[platform].saves / byPlatform[platform].views;
-    }
-
-    const watchTimes = stats?.filter(s => s.watch_time_percent).map(s => s.watch_time_percent) || [];
-    totals.avgWatchTime = watchTimes.length > 0
-      ? watchTimes.reduce((a, b) => a + b, 0) / watchTimes.length
-      : 0;
-
-    return { totals, byPlatform, videoCount: stats?.length || 0 };
-  };
-
-  const loadWinners = async (userId) => {
-    const { data: winners } = await supabase
-      .from("videos")
-      .select("id, script, hook_type, performance_score, thumbnail_url, created_at")
-      .eq("user_id", userId)
-      .eq("is_winner", true)
-      .order("performance_score", { ascending: false })
-      .limit(10);
-
-    return winners || [];
-  };
-
-  const loadHookPerformance = async (userId) => {
-    const { data: hookPerf } = await supabase
-      .from("hook_performance")
-      .select("*")
-      .eq("user_id", userId)
-      .order("avg_performance_score", { ascending: false });
-
-    return hookPerf || [];
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <div style={{ width: '24px', height: '24px', border: '2px solid #7c3aed', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
+  const hasNoPlatforms = !platforms.tiktok && !platforms.instagram;
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <div style={{ padding: '28px 32px' }}>
+      <div style={{ marginBottom: '28px' }}>
+        <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>Analytics</h1>
+        <p style={{ fontSize: '14px', color: '#6b7280' }}>Your content gets smarter every week. Here's what the data shows.</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '28px' }}>
+        <StatCard label="Total Views" value={hasPostedVideos ? stats.views.toLocaleString() : null} noData={!hasPostedVideos} />
+        <StatCard label="Avg Engagement" value={hasPostedVideos ? `${stats.engagement}%` : null} noData={!hasPostedVideos} />
+        <StatCard label="Videos Posted" value={stats.videosPosted} />
+        <StatCard label="Top Hook Type" value={stats.topHook?.replace('-', ' ')} noData={!stats.topHook} capitalize />
+      </div>
+
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', borderBottom: '1px solid #e5e7eb' }}>
+        {['overview', 'hook-performance', 'winners', 'ai-insights'].map((tab) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: '12px 20px', background: 'none', border: 'none', borderBottom: activeTab === tab ? '2px solid #7c3aed' : '2px solid transparent', color: activeTab === tab ? '#7c3aed' : '#6b7280', fontSize: '14px', fontWeight: '500', cursor: 'pointer', marginBottom: '-1px' }}>
+            {tab.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && (
         <div>
-          <h1 className="text-2xl font-bold text-white">Analytics</h1>
-          <p className="text-zinc-400">Performance insights from your content</p>
-        </div>
-
-        {/* Time Range Selector */}
-        <div className="flex gap-2">
-          {["7d", "30d", "90d"].map((range) => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                timeRange === range
-                  ? "bg-purple-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:text-white"
-              }`}
-            >
-              {range === "7d" ? "7 Days" : range === "30d" ? "30 Days" : "90 Days"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Overview Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-8">
-        <StatCard
-          label="Total Views"
-          value={formatNumber(data?.stats?.totals?.views || 0)}
-          icon="👀"
-        />
-        <StatCard
-          label="Total Saves"
-          value={formatNumber(data?.stats?.totals?.saves || 0)}
-          icon="💾"
-          highlight
-        />
-        <StatCard
-          label="Avg Watch Time"
-          value={`${(data?.stats?.totals?.avgWatchTime || 0).toFixed(0)}%`}
-          icon="⏱️"
-        />
-        <StatCard
-          label="Winner Videos"
-          value={data?.winners?.length || 0}
-          icon="🏆"
-        />
-        <StatCard
-          label="Engagement Rate"
-          value={`${calculateEngagementRate(data?.stats?.totals)}%`}
-          icon="📊"
-        />
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-zinc-800 mb-6">
-        <div className="flex gap-6">
-          {[
-            { id: "overview", label: "Overview" },
-            { id: "hooks", label: "Hook Performance" },
-            { id: "platforms", label: "Platform Comparison" },
-            { id: "winners", label: "Winners" },
-            { id: "insights", label: "AI Insights" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-3 px-1 border-b-2 text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? "border-purple-500 text-white"
-                  : "border-transparent text-zinc-400 hover:text-white"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === "overview" && (
-        <OverviewTab data={data} />
-      )}
-      {activeTab === "hooks" && (
-        <HookPerformanceTab hookPerformance={data?.hookPerformance} />
-      )}
-      {activeTab === "platforms" && (
-        <PlatformComparisonTab platforms={data?.stats?.byPlatform} insights={data?.insights?.platformAnalysis} />
-      )}
-      {activeTab === "winners" && (
-        <WinnersTab winners={data?.winners} />
-      )}
-      {activeTab === "insights" && (
-        <InsightsTab insights={data?.insights} />
-      )}
-    </div>
-  );
-}
-
-// ===========================================
-// TAB COMPONENTS
-// ===========================================
-
-function OverviewTab({ data }) {
-  const hookAnalysis = data?.insights?.hookAnalysis;
-
-  return (
-    <div className="grid grid-cols-2 gap-6">
-      {/* Best Performing Hook Type */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-        <h3 className="font-medium text-white mb-4">Best Performing Hook Type</h3>
-        {hookAnalysis?.bestHook ? (
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center">
-              <span className="text-2xl">🎯</span>
+          {hasPostedVideos ? (
+            <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '24px', height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <p style={{ color: '#6b7280' }}>Performance chart will appear here</p>
             </div>
-            <div>
-              <div className="text-xl font-bold text-white capitalize">
-                {hookAnalysis.bestHook.type}
-              </div>
-              <div className="text-sm text-zinc-400">
-                {(hookAnalysis.bestHook.avgScore * 100).toFixed(0)}% avg score • 
-                {(hookAnalysis.bestHook.winRate * 100).toFixed(0)}% win rate
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="text-zinc-400">Not enough data yet. Keep posting!</p>
-        )}
-      </div>
-
-      {/* AI Recommendation */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-        <h3 className="font-medium text-white mb-4">AI Recommendation</h3>
-        <p className="text-zinc-300">
-          {hookAnalysis?.recommendation || "Post more content to unlock personalized recommendations."}
-        </p>
-      </div>
-
-      {/* Platform Performance */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 col-span-2">
-        <h3 className="font-medium text-white mb-4">Platform Performance</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {Object.entries(data?.stats?.byPlatform || {}).map(([platform, stats]) => (
-            <div key={platform} className="bg-zinc-800 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl">{platform === "tiktok" ? "🎵" : "📸"}</span>
-                <span className="font-medium capitalize">{platform}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <div className="text-zinc-400">Views</div>
-                  <div className="font-medium">{formatNumber(stats.views)}</div>
-                </div>
-                <div>
-                  <div className="text-zinc-400">Save Rate</div>
-                  <div className="font-medium">{(stats.saveRate * 100).toFixed(2)}%</div>
-                </div>
-                <div>
-                  <div className="text-zinc-400">Avg Watch</div>
-                  <div className="font-medium">{stats.avgWatchTime.toFixed(0)}%</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HookPerformanceTab({ hookPerformance }) {
-  if (!hookPerformance || hookPerformance.length === 0) {
-    return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center">
-        <p className="text-zinc-400">No hook performance data yet. Post more videos to see insights.</p>
-      </div>
-    );
-  }
-
-  const maxScore = Math.max(...hookPerformance.map(h => h.avg_performance_score));
-
-  return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-      <h3 className="font-medium text-white mb-6">Hook Type Performance Ranking</h3>
-      <div className="space-y-4">
-        {hookPerformance.map((hook, index) => (
-          <div key={hook.hook_type} className="flex items-center gap-4">
-            <div className="w-8 text-center">
-              {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
-            </div>
-            <div className="w-24 text-sm font-medium capitalize">{hook.hook_type}</div>
-            <div className="flex-1">
-              <div className="h-6 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    index === 0 ? "bg-gradient-to-r from-green-500 to-emerald-500" :
-                    index === 1 ? "bg-gradient-to-r from-blue-500 to-cyan-500" :
-                    "bg-zinc-600"
-                  }`}
-                  style={{ width: `${(hook.avg_performance_score / maxScore) * 100}%` }}
-                />
-              </div>
-            </div>
-            <div className="w-20 text-right text-sm">
-              {(hook.avg_performance_score * 100).toFixed(0)}%
-            </div>
-            <div className="w-24 text-right text-sm text-zinc-400">
-              {hook.sample_size} videos
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 pt-6 border-t border-zinc-800">
-        <h4 className="font-medium text-white mb-2">Key Insight</h4>
-        <p className="text-zinc-400 text-sm">
-          {hookPerformance[0] && hookPerformance.length >= 2 ? (
-            `Your ${hookPerformance[0].hook_type} hooks outperform ${hookPerformance[hookPerformance.length - 1].hook_type} hooks by ${((hookPerformance[0].avg_performance_score - hookPerformance[hookPerformance.length - 1].avg_performance_score) * 100).toFixed(0)} percentage points. Focus on ${hookPerformance[0].hook_type} style content.`
           ) : (
-            "Keep posting different hook types to build comparative data."
+            <div>
+              <EmptyState hasNoPlatforms={hasNoPlatforms} title="No performance data yet" description="Post videos to TikTok or Instagram to start tracking views, engagement, and what hooks perform best." />
+              <PreviewSection />
+            </div>
           )}
-        </p>
-      </div>
-    </div>
-  );
-}
+        </div>
+      )}
 
-function PlatformComparisonTab({ platforms, insights }) {
-  return (
-    <div className="space-y-6">
-      {/* Comparison Cards */}
-      <div className="grid grid-cols-2 gap-6">
-        {Object.entries(platforms || {}).map(([platform, stats]) => (
-          <div key={platform} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-3xl">{platform === "tiktok" ? "🎵" : "📸"}</span>
-              <h3 className="text-xl font-bold capitalize">{platform}</h3>
+      {activeTab === 'hook-performance' && (
+        <div>
+          {hooks.length > 0 ? (
+            <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <th style={{ padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Rank</th>
+                    <th style={{ padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Hook Type</th>
+                    <th style={{ padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Videos</th>
+                    <th style={{ padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Avg Score</th>
+                    <th style={{ padding: '14px 20px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase' }}>Performance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hooks.map((hook, i) => (
+                    <tr key={hook.type} style={{ borderBottom: i < hooks.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                      <td style={{ padding: '14px 20px' }}>
+                        <span style={{ width: '24px', height: '24px', background: i < 3 ? '#7c3aed' : '#e5e7eb', color: i < 3 ? 'white' : '#6b7280', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600' }}>{i + 1}</span>
+                      </td>
+                      <td style={{ padding: '14px 20px', fontSize: '14px', fontWeight: '500', color: '#111827', textTransform: 'capitalize' }}>{hook.type.replace('-', ' ')}</td>
+                      <td style={{ padding: '14px 20px', fontSize: '14px', color: '#6b7280' }}>{hook.count}</td>
+                      <td style={{ padding: '14px 20px', fontSize: '14px', color: '#111827', fontWeight: '500' }}>{(hook.avgScore * 100).toFixed(0)}%</td>
+                      <td style={{ padding: '14px 20px' }}>
+                        <div style={{ width: '100px', height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${hook.avgScore * 100}%`, height: '100%', background: '#7c3aed', borderRadius: '3px' }} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Metric label="Total Views" value={formatNumber(stats.views)} />
-              <Metric label="Total Saves" value={formatNumber(stats.saves)} />
-              <Metric label="Save Rate" value={`${(stats.saveRate * 100).toFixed(2)}%`} />
-              <Metric label="Avg Watch Time" value={`${stats.avgWatchTime.toFixed(0)}%`} />
+          ) : (
+            <div>
+              <EmptyState hasNoPlatforms={hasNoPlatforms} title="No hook data yet" description="Generate videos to see which hook types perform best for your audience." icon="hooks" />
+              <PreviewSection />
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      )}
 
-      {/* Platform Insight */}
-      {insights?.insight && (
-        <div className="bg-gradient-to-r from-purple-900/50 to-pink-900/50 border border-purple-500/30 rounded-xl p-6">
-          <h3 className="font-medium text-white mb-2">💡 Platform Insight</h3>
-          <p className="text-zinc-300">{insights.insight}</p>
+      {activeTab === 'winners' && (
+        <div>
+          <EmptyState hasNoPlatforms={hasNoPlatforms} title="No winners detected yet" description="Videos with engagement above average will appear here. Keep posting to find your winning content." icon="trophy" />
+          <PreviewSection />
+        </div>
+      )}
+
+      {activeTab === 'ai-insights' && (
+        <div>
+          <EmptyState hasNoPlatforms={hasNoPlatforms} title="AI insights coming soon" description="Once you have enough performance data, we'll generate weekly reports with recommendations on what to double down on." icon="sparkles" />
+          <PreviewSection />
         </div>
       )}
     </div>
   );
 }
 
-function WinnersTab({ winners }) {
-  if (!winners || winners.length === 0) {
-    return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center">
-        <div className="text-4xl mb-4">🏆</div>
-        <h3 className="text-lg font-medium text-white mb-2">No winners yet</h3>
-        <p className="text-zinc-400">Videos that score in the top 25% become winners. Keep posting!</p>
-      </div>
-    );
-  }
-
+function StatCard({ label, value, noData, capitalize }) {
   return (
-    <div className="space-y-4">
-      {winners.map((video, index) => (
-        <div key={video.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4">
-          <div className="w-8 text-center text-xl">
-            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : "🏆"}
-          </div>
-          <div className="w-16 h-16 bg-zinc-800 rounded-lg overflow-hidden">
-            {video.thumbnail_url ? (
-              <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-2xl">🎬</div>
-            )}
-          </div>
-          <div className="flex-1">
-            <div className="font-medium text-white line-clamp-1">
-              {video.script?.substring(0, 60)}...
-            </div>
-            <div className="text-sm text-zinc-400 flex gap-4">
-              <span className="capitalize">{video.hook_type} hook</span>
-              <span>{new Date(video.created_at).toLocaleDateString()}</span>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-green-400">
-              {(video.performance_score * 100).toFixed(0)}%
-            </div>
-            <div className="text-xs text-zinc-400">Performance Score</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function InsightsTab({ insights }) {
-  const allInsights = insights?.insights || [];
-  const recommendations = insights?.latestReport?.recommendations || [];
-
-  return (
-    <div className="space-y-6">
-      {/* Weekly Report Recommendations */}
-      {recommendations.length > 0 && (
-        <div className="bg-gradient-to-r from-purple-900/50 to-pink-900/50 border border-purple-500/30 rounded-xl p-6">
-          <h3 className="font-medium text-white mb-4">📊 Weekly Report Recommendations</h3>
-          <ul className="space-y-2">
-            {recommendations.map((rec, i) => (
-              <li key={i} className="flex items-start gap-2 text-zinc-300">
-                <span className="text-purple-400">→</span>
-                {rec}
-              </li>
-            ))}
-          </ul>
-        </div>
+    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '18px', minHeight: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+      {noData || value === null || value === undefined ? (
+        <p style={{ fontSize: '13px', color: '#9ca3af' }}>No data yet</p>
+      ) : (
+        <p style={{ fontSize: '24px', fontWeight: '600', color: '#111827', textTransform: capitalize ? 'capitalize' : 'none' }}>{value}</p>
       )}
+      <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px' }}>{label}</p>
+    </div>
+  );
+}
 
-      {/* Individual Insights */}
-      <div className="space-y-4">
-        {allInsights.map((insight) => (
-          <div key={insight.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h4 className="font-medium text-white">{insight.title}</h4>
-                <p className="text-sm text-zinc-400 mt-1">{insight.description}</p>
-              </div>
-              {insight.is_actionable && (
-                <span className="px-2 py-1 bg-purple-500/20 text-purple-400 text-xs rounded">
-                  Action: {insight.action_label}
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
+function EmptyState({ hasNoPlatforms, title, description, icon = 'chart' }) {
+  const icons = {
+    chart: <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>,
+    hooks: <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+    trophy: <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>,
+    sparkles: <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>,
+  };
 
-        {allInsights.length === 0 && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center">
-            <p className="text-zinc-400">No insights generated yet. Post more content to unlock AI-powered recommendations.</p>
-          </div>
-        )}
+  return (
+    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
+      <div style={{ width: '64px', height: '64px', background: '#f5f3ff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#7c3aed' }}>
+        {icons[icon]}
+      </div>
+      <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', marginBottom: '8px' }}>{title}</h3>
+      <p style={{ fontSize: '14px', color: '#6b7280', maxWidth: '360px', margin: '0 auto 20px' }}>{description}</p>
+      {hasNoPlatforms && (
+        <Link href="/dashboard/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#7c3aed', color: 'white', fontSize: '14px', fontWeight: '500', borderRadius: '8px', textDecoration: 'none' }}>
+          Connect TikTok or Instagram
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function PreviewSection() {
+  return (
+    <div style={{ marginTop: '24px', padding: '24px', background: '#f9fafb', borderRadius: '12px', border: '1px dashed #d1d5db' }}>
+      <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#6b7280', marginBottom: '16px' }}>What you'll see when you start posting:</h4>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+        <PreviewCard title="Views Over Time" desc="Track daily and weekly view trends" icon="line" />
+        <PreviewCard title="Top Performing Hooks" desc="See which hooks get the most engagement" icon="bar" />
+        <PreviewCard title="Winner Detection" desc="Auto-identify videos to scale" icon="trophy" />
       </div>
     </div>
   );
 }
 
-// ===========================================
-// HELPER COMPONENTS
-// ===========================================
+function PreviewCard({ title, desc, icon }) {
+  const chartPreview = {
+    line: (
+      <svg width="100%" height="50" viewBox="0 0 100 50" preserveAspectRatio="none">
+        <polyline points="0,40 20,35 40,25 60,30 80,15 100,10" fill="none" stroke="#d1d5db" strokeWidth="2"/>
+      </svg>
+    ),
+    bar: (
+      <svg width="100%" height="50" viewBox="0 0 100 50">
+        <rect x="5" y="25" width="12" height="25" fill="#e5e7eb" rx="2"/>
+        <rect x="25" y="15" width="12" height="35" fill="#e5e7eb" rx="2"/>
+        <rect x="45" y="10" width="12" height="40" fill="#e5e7eb" rx="2"/>
+        <rect x="65" y="20" width="12" height="30" fill="#e5e7eb" rx="2"/>
+        <rect x="85" y="30" width="12" height="20" fill="#e5e7eb" rx="2"/>
+      </svg>
+    ),
+    trophy: (
+      <div style={{ height: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5">
+          <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+          <path d="M4 22h16"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+        </svg>
+      </div>
+    ),
+  };
 
-function StatCard({ label, value, icon, highlight }) {
   return (
-    <div className={`rounded-xl p-4 ${highlight ? "bg-gradient-to-br from-purple-900/50 to-pink-900/50 border border-purple-500/30" : "bg-zinc-900 border border-zinc-800"}`}>
-      <div className="text-2xl mb-2">{icon}</div>
-      <div className="text-2xl font-bold text-white">{value}</div>
-      <div className="text-sm text-zinc-400">{label}</div>
+    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px' }}>
+      <div style={{ marginBottom: '12px' }}>
+        {chartPreview[icon]}
+      </div>
+      <p style={{ fontSize: '13px', fontWeight: '500', color: '#374151', marginBottom: '4px' }}>{title}</p>
+      <p style={{ fontSize: '12px', color: '#9ca3af' }}>{desc}</p>
     </div>
   );
-}
-
-function Metric({ label, value }) {
-  return (
-    <div>
-      <div className="text-sm text-zinc-400">{label}</div>
-      <div className="text-lg font-medium text-white">{value}</div>
-    </div>
-  );
-}
-
-// ===========================================
-// HELPERS
-// ===========================================
-
-function formatNumber(num) {
-  if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-  return num.toString();
-}
-
-function calculateEngagementRate(totals) {
-  if (!totals || !totals.views) return "0.00";
-  const engagement = (totals.likes + totals.saves + totals.shares) / totals.views * 100;
-  return engagement.toFixed(2);
 }

@@ -77,27 +77,31 @@ export async function generateKlingVideo({
   }
 
   try {
-    // UPGRADED: Using Kling 3.0 endpoint
+    // Using Kling 2.1 Pro (stable, good quality)
     const fal = await getFalClient();
-    const result = await fal.subscribe("fal-ai/kling-video/v3/pro/image-to-video", {
+    const result = await fal.subscribe("fal-ai/kling-video/v2.1/pro/image-to-video", {
       input,
       logs: true,
       onQueueUpdate: (update) => {
         if (update.status === "IN_PROGRESS") {
-          console.log("[Kling 3.0] Generation in progress...");
+          console.log("[Kling 2.1] Generation in progress...");
         }
       },
     });
 
+    // Handle both old and new fal.ai client response shapes
+    const videoUrl = result?.data?.video?.url || result?.video?.url;
+    const requestId = result?.data?.request_id || result?.request_id;
+
     return {
-      success: true,
-      videoUrl: result.video.url,
+      success: !!videoUrl,
+      videoUrl: videoUrl,
       duration: duration,
-      requestId: result.request_id,
+      requestId: requestId,
       cost: KLING_COSTS[duration] || (duration * 0.14),
     };
   } catch (error) {
-    console.error("[Kling 3.0] Generation failed:", error);
+    console.error("[Kling] Generation failed:", error);
     return {
       success: false,
       error: error.message,
@@ -286,37 +290,33 @@ Delivery: Conversational, natural pauses, genuine emotion.`;
 // ===========================================
 
 function buildUGCPrompt({ script, voiceStyle, setting }) {
-  const styleModifiers = {
-    conversational: "calm, friendly delivery with natural pauses",
-    energetic: "enthusiastic, excited delivery with expressive gestures",
-    professional: "confident, authoritative delivery with subtle gestures",
-    casual: "relaxed, laid-back delivery like talking to a friend",
+  const deliveryStyles = {
+    conversational: "calm and natural, like talking to a friend, occasional pauses",
+    energetic: "enthusiastic but not over the top, genuine excitement",
+    professional: "confident and clear, subtle hand gestures",
+    casual: "relaxed and laid-back, comfortable presence",
   };
 
-  return `A real-time, handheld-feel UGC video in ${setting}.
+  const delivery = deliveryStyles[voiceStyle] || deliveryStyles.conversational;
 
-Shot on iPhone 15 Pro Max with natural lighting only.
-Off-center, slightly imperfect framing typical of authentic selfie videos.
-Subtle phone-camera grain and mild softness.
+  // Structure: Camera → Action → Delivery → Physical → Lighting → Motion
+  return `Medium close-up shot, handheld stability with natural micro-movements.
 
-The person has:
-- Visible pores and natural skin texture
-- Facial asymmetry and natural imperfections
-- Under-eye darkness and smile lines
-- Controlled flyaways in hair
-- Genuine expression, not performed
+Subject action: Person shares thoughts directly to camera, engaged and present.
 
-Delivery style: ${styleModifiers[voiceStyle] || styleModifiers.conversational}
+Delivery style: ${delivery}
 
-The person looks directly at the camera lens with natural eye contact.
-Natural blinking every 3-4 seconds.
-Subtle hand gestures near torso.
-${script ? `Speaking the following naturally: "${script}"` : ""}
+Physical: Natural appearance, casual clothing, relaxed posture. Real person, not a model.
 
-Motion is fully real-time with no slow motion or stylization.
-Authentic UGC-meets-documentary realism throughout.
+Lighting: Soft natural daylight, ${setting || "indoor near window"}. Warm color temperature, no harsh shadows.
 
-IMPORTANT: This should look like a real person filmed this on their phone, NOT like AI-generated content or a professional production.`;
+Motion constraints: Subtle natural movement only. Small head tilts, gentle hand gestures near torso. No exaggerated expressions or sudden movements. Natural blinking.
+
+Style: Conversational and unrehearsed, natural speech patterns, avoid overly polished aesthetics. Real person sharing genuine thoughts, not performing.
+
+Camera behavior: Single continuous shot. Slight handheld movement, not locked off. Natural breathing room in frame, slightly off-center composition.
+
+${script ? `The person speaks naturally.` : ""}`;
 }
 
 function getShotCamera(shotType) {
@@ -341,53 +341,87 @@ function getShotCamera(shotType) {
 export async function generateHookVideo({
   avatarImageUrl,
   hookScript,
-  hookType, // curiosity, pov, story, question, direct
+  hookType, // problem-solution, transformation, comparison, discovery, social-proof
 }) {
+  // New narrative structure types
   const hookStyles = {
-    curiosity: {
-      delivery: "intrigued, leaning in slightly, eyebrows raised",
-      energy: "building suspense",
+    "problem-solution": {
+      camera: "Medium close-up, slight push-in during realization",
+      action: "Person shares a frustration then hints at solution",
+      delivery: "Shifts from frustrated to relieved expression",
     },
-    pov: {
-      delivery: "relatable, knowing look, slight head tilt",
-      energy: "drawing viewer in",
+    "transformation": {
+      camera: "Close-up face, stable handheld feel",
+      action: "Person reflects on change, genuine emotional beat",
+      delivery: "Warm, reflective, slight smile building",
     },
-    story: {
-      delivery: "animated, expressive, setting the scene",
-      energy: "storytelling mode",
+    "comparison": {
+      camera: "Medium shot, casual framing",
+      action: "Person weighs options, lands on preference",
+      delivery: "Thoughtful consideration, then decisive",
     },
-    question: {
-      delivery: "genuinely curious, engaging directly with viewer",
-      energy: "seeking connection",
+    "discovery": {
+      camera: "Close-up reaction shot, slight movement",
+      action: "Person encounters something new, processes it",
+      delivery: "Curious expression shifting to impressed",
     },
-    direct: {
-      delivery: "confident, direct eye contact, assertive",
-      energy: "commanding attention",
+    "social-proof": {
+      camera: "Medium close-up, direct to camera",
+      action: "Person shares experience confidently",
+      delivery: "Assured, helpful, recommending to a friend",
+    },
+    // Legacy types (backwards compatibility)
+    "curiosity": {
+      camera: "Close-up, slight lean toward camera",
+      action: "Person shares interesting information",
+      delivery: "Eyebrows raised slightly, engaged",
+    },
+    "direct": {
+      camera: "Medium close-up, stable frame",
+      action: "Person makes a clear point",
+      delivery: "Confident, direct eye contact",
+    },
+    "story": {
+      camera: "Medium shot, casual handheld",
+      action: "Person recounts an experience",
+      delivery: "Animated, expressive, natural gestures",
+    },
+    "pov": {
+      camera: "Close-up, intimate framing",
+      action: "Person relates to viewer experience",
+      delivery: "Knowing look, slight head tilt",
+    },
+    "question": {
+      camera: "Close-up, direct address",
+      action: "Person poses a question to viewer",
+      delivery: "Curious, inviting response",
     },
   };
 
-  const style = hookStyles[hookType] || hookStyles.curiosity;
+  const style = hookStyles[hookType] || hookStyles["discovery"];
 
-  const prompt = `UGC-style hook video, first 5 seconds to grab attention.
+  const prompt = `${style.camera}, single continuous 5-second shot.
 
-Shot on iPhone, natural lighting, off-center framing, visible skin texture.
+Subject action: ${style.action}
 
-The person delivers: "${hookScript}"
+Delivery style: ${style.delivery}
 
-Delivery: ${style.delivery}
-Energy: ${style.energy}
+Physical: Natural appearance, casual clothing, relaxed posture.
 
-This is the HOOK - needs to stop the scroll immediately.
-Expression changes from neutral to engaged in first second.
-Direct eye contact with camera lens.
-Authentic, not performed.`;
+Lighting: Soft natural daylight from window, warm color temperature.
+
+Motion: Subtle natural movement. Small head tilts, gentle gestures. No exaggerated expressions.
+
+Style: Conversational and unrehearsed. Real person, not performing.
+
+This is a HOOK video - must grab attention in the first second.`;
 
   return generateKlingVideo({
     avatarImageUrl,
     script: hookScript,
-    voiceStyle: hookType === "energetic" ? "energetic" : "conversational",
+    voiceStyle: "conversational",
     duration: 5,
-    setting: "casual home environment, natural window light",
+    setting: "casual home environment",
   });
 }
 

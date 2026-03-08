@@ -4,26 +4,26 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// ===========================================
-// ONBOARDING FLOW
-// 5 steps, ~8 minutes, ends with first video queued
-// ===========================================
-
 const STEPS = [
-  { id: "niche", title: "What do you sell?", duration: "1 min" },
-  { id: "product", title: "Add your product", duration: "2 min" },
-  { id: "connect", title: "Connect TikTok", duration: "2 min" },
-  { id: "avatar", title: "Choose your presenter", duration: "1 min" },
-  { id: "generate", title: "Create your first video", duration: "2 min" },
+  { id: "workspace", title: "Workspace" },
+  { id: "business", title: "Business" },
+  { id: "product", title: "Product" },
+  { id: "platforms", title: "Platforms" },
+  { id: "avatar", title: "Avatar" },
+  { id: "preview", title: "Preview" },
 ];
 
-const NICHES = [
-  { id: "tiktok_shop", name: "TikTok Shop", icon: "🛍️", description: "Physical products on TikTok Shop" },
-  { id: "ecommerce", name: "E-commerce / DTC", icon: "📦", description: "Online store or Shopify" },
-  { id: "saas", name: "SaaS / Software", icon: "💻", description: "Software product or service" },
-  { id: "personal_brand", name: "Personal Brand", icon: "👤", description: "Building your presence" },
-  { id: "indie_hacker", name: "Indie Hacker", icon: "🚀", description: "Solo founder building in public" },
-  { id: "service", name: "Service Business", icon: "🛠️", description: "Coaching, consulting, services" },
+const WORKSPACE_TYPES = [
+  { id: "solo", title: "Just me", desc: "Solo creator or founder" },
+  { id: "team", title: "Small team", desc: "2-10 people" },
+  { id: "agency", title: "Agency", desc: "Managing multiple brands" },
+];
+
+const BUSINESS_TYPES = [
+  { id: "tiktok-shop", title: "TikTok Shop", desc: "Selling products on TikTok" },
+  { id: "ecommerce", title: "E-commerce", desc: "Shopify, Amazon, DTC" },
+  { id: "saas", title: "SaaS / App", desc: "Software products" },
+  { id: "service", title: "Service", desc: "Coaching, consulting" },
 ];
 
 export default function OnboardingPage() {
@@ -31,736 +31,563 @@ export default function OnboardingPage() {
   const supabase = createClient();
 
   const [step, setStep] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Onboarding data
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [avatars, setAvatars] = useState([]);
+  
   const [data, setData] = useState({
-    niche: null,
-    product: {
-      name: "",
-      description: "",
-      benefit: "",
-      url: "",
-      images: [],
-    },
-    tiktokConnected: false,
+    workspaceType: null,
+    businessType: null,
+    productName: "",
+    productBenefit: "",
+    targetAudience: "",
+    productUrl: "",
+    platforms: [],
     avatarId: null,
-    firstVideoId: null,
   });
 
-  // Check if already onboarded
   useEffect(() => {
-    checkOnboardingStatus();
+    loadData();
   }, []);
 
-  const checkOnboardingStatus = async () => {
+  const loadData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       router.push("/login");
       return;
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("onboarding_completed, onboarding_step, niche")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.onboarding_completed) {
-      router.push("/dashboard");
-      return;
-    }
-
-    if (profile?.onboarding_step) {
-      setStep(profile.onboarding_step);
-    }
-
-    if (profile?.niche) {
-      setData(d => ({ ...d, niche: profile.niche }));
-    }
-  };
-
-  const saveProgress = async (stepIndex) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from("profiles")
-      .update({
-        onboarding_step: stepIndex,
-        niche: data.niche,
-      })
-      .eq("id", user.id);
-  };
-
-  const nextStep = () => {
-    const newStep = Math.min(step + 1, STEPS.length - 1);
-    setStep(newStep);
-    saveProgress(newStep);
-  };
-
-  const prevStep = () => {
-    setStep(Math.max(step - 1, 0));
-  };
-
-  const completeOnboarding = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from("profiles")
-      .update({
-        onboarding_completed: true,
-        onboarding_step: STEPS.length,
-      })
-      .eq("id", user.id);
-
-    router.push("/dashboard?onboarding=complete");
-  };
-
-  const renderStep = () => {
-    switch (STEPS[step].id) {
-      case "niche":
-        return (
-          <NicheStep
-            selected={data.niche}
-            onSelect={(niche) => {
-              setData({ ...data, niche });
-              nextStep();
-            }}
-          />
-        );
-
-      case "product":
-        return (
-          <ProductStep
-            product={data.product}
-            onChange={(product) => setData({ ...data, product })}
-            onNext={nextStep}
-            onBack={prevStep}
-          />
-        );
-
-      case "connect":
-        return (
-          <ConnectStep
-            connected={data.tiktokConnected}
-            onConnected={() => {
-              setData({ ...data, tiktokConnected: true });
-              nextStep();
-            }}
-            onSkip={nextStep}
-            onBack={prevStep}
-          />
-        );
-
-      case "avatar":
-        return (
-          <AvatarStep
-            selected={data.avatarId}
-            niche={data.niche}
-            onSelect={(avatarId) => {
-              setData({ ...data, avatarId });
-              nextStep();
-            }}
-            onBack={prevStep}
-          />
-        );
-
-      case "generate":
-        return (
-          <GenerateStep
-            data={data}
-            onComplete={completeOnboarding}
-            onBack={prevStep}
-          />
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-zinc-950 text-white">
-      {/* Header */}
-      <div className="border-b border-zinc-800 px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Distributo
-          </div>
-          <div className="text-sm text-zinc-400">
-            Step {step + 1} of {STEPS.length}
-          </div>
-        </div>
-      </div>
-
-      {/* Progress */}
-      <div className="max-w-2xl mx-auto px-6 py-4">
-        <div className="flex gap-2">
-          {STEPS.map((s, i) => (
-            <div
-              key={s.id}
-              className={`flex-1 h-1 rounded-full transition-colors ${
-                i <= step ? "bg-purple-500" : "bg-zinc-800"
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-2xl mx-auto px-6 py-8">
-        {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400">
-            {error}
-          </div>
-        )}
-
-        {renderStep()}
-      </div>
-    </div>
-  );
-}
-
-// ===========================================
-// STEP 1: NICHE SELECTION
-// ===========================================
-
-function NicheStep({ selected, onSelect }) {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">What type of business do you have?</h1>
-      <p className="text-zinc-400 mb-8">We'll customize your experience based on your niche.</p>
-
-      <div className="grid grid-cols-2 gap-4">
-        {NICHES.map((niche) => (
-          <button
-            key={niche.id}
-            onClick={() => onSelect(niche.id)}
-            className={`p-4 rounded-xl border text-left transition-all ${
-              selected === niche.id
-                ? "border-purple-500 bg-purple-500/10"
-                : "border-zinc-800 hover:border-zinc-700"
-            }`}
-          >
-            <div className="text-2xl mb-2">{niche.icon}</div>
-            <div className="font-medium">{niche.name}</div>
-            <div className="text-sm text-zinc-400 mt-1">{niche.description}</div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ===========================================
-// STEP 2: PRODUCT SETUP
-// ===========================================
-
-function ProductStep({ product, onChange, onNext, onBack }) {
-  const [urlLoading, setUrlLoading] = useState(false);
-
-  const scrapeUrl = async () => {
-    if (!product.url) return;
-
-    setUrlLoading(true);
-    try {
-      const response = await fetch("/api/scraper/product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: product.url }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        onChange({
-          ...product,
-          name: data.name || product.name,
-          description: data.description || product.description,
-          images: data.images || product.images,
-        });
-      }
-    } catch (error) {
-      console.error("Scrape failed:", error);
-    }
-    setUrlLoading(false);
-  };
-
-  const canProceed = product.name && product.description;
-
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Tell us about your product</h1>
-      <p className="text-zinc-400 mb-8">We'll use this to generate scripts and videos.</p>
-
-      <div className="space-y-4">
-        {/* URL Import */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Product URL <span className="text-zinc-500">(optional - we'll auto-fill)</span>
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={product.url}
-              onChange={(e) => onChange({ ...product, url: e.target.value })}
-              placeholder="https://yourstore.com/product"
-              className="flex-1 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
-            />
-            <button
-              onClick={scrapeUrl}
-              disabled={!product.url || urlLoading}
-              className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded-xl text-sm font-medium"
-            >
-              {urlLoading ? "Loading..." : "Import"}
-            </button>
-          </div>
-        </div>
-
-        <div className="border-t border-zinc-800 my-6" />
-
-        {/* Manual Entry */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Product Name <span className="text-red-400">*</span>
-          </label>
-          <input
-            type="text"
-            value={product.name}
-            onChange={(e) => onChange({ ...product, name: e.target.value })}
-            placeholder="e.g., GlowSerum Pro"
-            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Main Benefit <span className="text-red-400">*</span>
-          </label>
-          <textarea
-            value={product.description}
-            onChange={(e) => onChange({ ...product, description: e.target.value })}
-            placeholder="What's the #1 thing your product does? e.g., 'Clears acne in 2 weeks'"
-            rows={2}
-            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Why it works <span className="text-zinc-500">(optional)</span>
-          </label>
-          <textarea
-            value={product.benefit}
-            onChange={(e) => onChange({ ...product, benefit: e.target.value })}
-            placeholder="What makes it special? e.g., 'Uses patented 3-step formula'"
-            rows={2}
-            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none"
-          />
-        </div>
-      </div>
-
-      <div className="flex justify-between mt-8">
-        <button
-          onClick={onBack}
-          className="px-6 py-3 text-zinc-400 hover:text-white"
-        >
-          ← Back
-        </button>
-        <button
-          onClick={onNext}
-          disabled={!canProceed}
-          className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium"
-        >
-          Continue →
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ===========================================
-// STEP 3: CONNECT TIKTOK
-// ===========================================
-
-function ConnectStep({ connected, onConnected, onSkip, onBack }) {
-  const [checking, setChecking] = useState(false);
-
-  useEffect(() => {
-    // Check URL params for successful connection
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("success") === "tiktok_connected") {
-      onConnected();
-    }
-  }, []);
-
-  const handleConnect = () => {
-    window.location.href = "/api/auth/tiktok";
-  };
-
-  return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Connect your TikTok</h1>
-      <p className="text-zinc-400 mb-8">
-        We'll post your videos automatically at the best times.
-      </p>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center">
-        {connected ? (
-          <>
-            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">✓</span>
-            </div>
-            <h3 className="text-lg font-medium text-green-400">TikTok Connected!</h3>
-            <p className="text-sm text-zinc-400 mt-2">
-              Your account is ready for automatic posting.
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="w-16 h-16 bg-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🎵</span>
-            </div>
-            <h3 className="text-lg font-medium mb-2">Connect TikTok Account</h3>
-            <p className="text-sm text-zinc-400 mb-6">
-              This allows Distributo to post videos on your behalf.
-            </p>
-            <button
-              onClick={handleConnect}
-              className="px-8 py-3 bg-pink-500 hover:bg-pink-400 rounded-xl font-medium"
-            >
-              Connect TikTok
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="flex justify-between mt-8">
-        <button
-          onClick={onBack}
-          className="px-6 py-3 text-zinc-400 hover:text-white"
-        >
-          ← Back
-        </button>
-        <div className="flex gap-2">
-          {!connected && (
-            <button
-              onClick={onSkip}
-              className="px-6 py-3 text-zinc-400 hover:text-white"
-            >
-              Skip for now
-            </button>
-          )}
-          {connected && (
-            <button
-              onClick={onSkip}
-              className="px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium"
-            >
-              Continue →
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ===========================================
-// STEP 4: AVATAR SELECTION
-// ===========================================
-
-function AvatarStep({ selected, niche, onSelect, onBack }) {
-  const [avatars, setAvatars] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const supabase = createClient();
-
-  useEffect(() => {
-    loadAvatars();
-  }, []);
-
-  const loadAvatars = async () => {
-    const { data } = await supabase
+    // Load avatars
+    const { data: avatarData } = await supabase
       .from("avatars")
       .select("*")
       .eq("is_system", true)
-      .limit(6);
+      .order("name");
 
-    setAvatars(data || []);
+    setAvatars(avatarData || []);
     setLoading(false);
   };
 
-  // Recommend avatars based on niche
-  const getRecommendedStyle = () => {
-    const styles = {
-      tiktok_shop: "energetic",
-      ecommerce: "warm",
-      saas: "professional",
-      personal_brand: "casual",
-      indie_hacker: "casual",
-      service: "professional",
+  const handleComplete = async () => {
+    setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Map UI business type to pillar system business type
+    const businessTypeMap = {
+      'tiktok-shop': 'tiktok-shop',
+      'ecommerce': 'ecommerce',
+      'saas': 'saas',
+      'service': 'service',
+      'content-creator': 'content-creator',
     };
-    return styles[niche] || "warm";
+    
+    const businessType = businessTypeMap[data.businessType] || 'ecommerce';
+    
+    if (user) {
+      await supabase
+        .from("profiles")
+        .update({
+          onboarding_completed: true,
+          workspace_type: data.workspaceType,
+          niche: data.businessType,
+          business_type: businessType,
+          target_audience: data.targetAudience,
+        })
+        .eq("id", user.id);
+
+      // Create first strategy if product info provided
+      if (data.productName && data.avatarId) {
+        await fetch("/api/campaigns/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            productName: data.productName,
+            productBenefit: data.productBenefit,
+            targetAudience: data.targetAudience,
+            productUrl: data.productUrl,
+            avatarId: data.avatarId,
+            hookCount: 1,
+            contentType: "mixed",
+          }),
+        });
+      }
+    }
+
+    router.push("/dashboard");
   };
+
+  const nextStep = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
+  const prevStep = () => setStep(s => Math.max(s - 1, 0));
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full" />
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb' }}>
+        <div style={{ width: '24px', height: '24px', border: '2px solid #7c3aed', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Choose your AI presenter</h1>
-      <p className="text-zinc-400 mb-8">
-        This avatar will appear in your UGC-style videos.
-      </p>
-
-      <div className="grid grid-cols-3 gap-4">
-        {avatars.map((avatar) => (
-          <button
-            key={avatar.id}
-            onClick={() => onSelect(avatar.id)}
-            className={`relative rounded-xl overflow-hidden border-2 transition-all ${
-              selected === avatar.id
-                ? "border-purple-500 ring-2 ring-purple-500/50"
-                : "border-zinc-800 hover:border-zinc-700"
-            }`}
-          >
-            <div className="aspect-[3/4] bg-zinc-800">
-              {avatar.image_url ? (
-                <img
-                  src={avatar.image_url}
-                  alt={avatar.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-4xl">
-                  👤
-                </div>
-              )}
+    <div style={{ minHeight: '100vh', background: '#f9fafb', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 24px' }}>
+      {/* Progress */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '48px' }}>
+        {STEPS.map((s, i) => (
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '14px',
+              fontWeight: '500',
+              background: i <= step ? '#7c3aed' : '#e5e7eb',
+              color: i <= step ? 'white' : '#6b7280',
+            }}>
+              {i < step ? '✓' : i + 1}
             </div>
-            <div className="p-3 bg-zinc-900">
-              <div className="font-medium text-sm">{avatar.name}</div>
-              <div className="text-xs text-zinc-500 capitalize">{avatar.style}</div>
-            </div>
-            {avatar.style === getRecommendedStyle() && (
-              <div className="absolute top-2 right-2 px-2 py-0.5 bg-purple-600 text-xs rounded-full">
-                Recommended
-              </div>
+            {i < STEPS.length - 1 && (
+              <div style={{ width: '40px', height: '2px', background: i < step ? '#7c3aed' : '#e5e7eb' }} />
             )}
-          </button>
+          </div>
         ))}
       </div>
 
-      <div className="flex justify-between mt-8">
-        <button
-          onClick={onBack}
-          className="px-6 py-3 text-zinc-400 hover:text-white"
-        >
-          ← Back
-        </button>
-        <button
-          onClick={() => onSelect(selected || avatars[0]?.id)}
-          disabled={!avatars.length}
-          className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-xl font-medium"
-        >
-          Continue →
-        </button>
+      {/* Step Content */}
+      <div style={{ width: '100%', maxWidth: '480px' }}>
+        {/* Step 1: Workspace Type */}
+        {step === 0 && (
+          <StepContainer title="How will you use Distributo?" subtitle="This helps us tailor your experience">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {WORKSPACE_TYPES.map(type => (
+                <OptionCard
+                  key={type.id}
+                  title={type.title}
+                  desc={type.desc}
+                  selected={data.workspaceType === type.id}
+                  onClick={() => setData(d => ({ ...d, workspaceType: type.id }))}
+                />
+              ))}
+            </div>
+            <StepNav onNext={nextStep} canNext={!!data.workspaceType} />
+          </StepContainer>
+        )}
+
+        {/* Step 2: Business Type */}
+        {step === 1 && (
+          <StepContainer title="What type of business are you?" subtitle="We'll customize content formats for your niche">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {BUSINESS_TYPES.map(type => (
+                <OptionCard
+                  key={type.id}
+                  title={type.title}
+                  desc={type.desc}
+                  selected={data.businessType === type.id}
+                  onClick={() => setData(d => ({ ...d, businessType: type.id }))}
+                />
+              ))}
+            </div>
+            <StepNav onBack={prevStep} onNext={nextStep} canNext={!!data.businessType} />
+          </StepContainer>
+        )}
+
+        {/* Step 3: Product Setup */}
+        {step === 2 && (
+          <StepContainer title="Tell us about your product" subtitle="We'll use this to generate your first content">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                  Product URL
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://yourstore.com/product"
+                  value={data.productUrl}
+                  onChange={(e) => setData(d => ({ ...d, productUrl: e.target.value }))}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '14px' }}
+                />
+                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Paste URL to auto-fill product details</p>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                  Product Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Glow Serum"
+                  value={data.productName}
+                  onChange={(e) => setData(d => ({ ...d, productName: e.target.value }))}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '14px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                  Main Benefit *
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="What problem does it solve?"
+                  value={data.productBenefit}
+                  onChange={(e) => setData(d => ({ ...d, productBenefit: e.target.value }))}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '14px', resize: 'none' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
+                  Target Audience
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g., Postpartum mothers 6-18 months after birth struggling with baby weight"
+                  value={data.targetAudience || ''}
+                  onChange={(e) => setData(d => ({ ...d, targetAudience: e.target.value }))}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '14px', resize: 'none' }}
+                />
+                <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Be specific - the more detail, the better the content</p>
+              </div>
+            </div>
+            <StepNav onBack={prevStep} onNext={nextStep} canNext={!!data.productName && !!data.productBenefit} />
+          </StepContainer>
+        )}
+
+        {/* Step 4: Platform Connection */}
+        {step === 3 && (
+          <StepContainer title="Connect your platforms" subtitle="We'll post videos automatically to your accounts">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <PlatformCard
+                name="TikTok"
+                icon="tiktok"
+                connected={data.platforms.includes('tiktok')}
+                onConnect={() => setData(d => ({ ...d, platforms: [...d.platforms, 'tiktok'] }))}
+              />
+              <PlatformCard
+                name="Instagram"
+                icon="instagram"
+                connected={data.platforms.includes('instagram')}
+                onConnect={() => setData(d => ({ ...d, platforms: [...d.platforms, 'instagram'] }))}
+              />
+            </div>
+            
+            {/* Navigation - different if platforms connected */}
+            {data.platforms.length > 0 ? (
+              <StepNav onBack={prevStep} onNext={nextStep} canNext={true} nextLabel="Continue" />
+            ) : (
+              <div style={{ marginTop: '24px' }}>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={prevStep}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#374151',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={nextStep}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#374151',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Skip for now
+                  </button>
+                </div>
+                <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px', textAlign: 'center' }}>
+                  You can connect platforms later in Settings
+                </p>
+              </div>
+            )}
+          </StepContainer>
+        )}
+
+        {/* Step 5: Avatar Selection */}
+        {step === 4 && (
+          <StepContainer title="Choose your AI presenter" subtitle="This is the face that will appear in your videos">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+              {avatars.slice(0, 9).map(avatar => (
+                <AvatarCard
+                  key={avatar.id}
+                  avatar={avatar}
+                  selected={data.avatarId === avatar.id}
+                  onClick={() => setData(d => ({ ...d, avatarId: avatar.id }))}
+                />
+              ))}
+            </div>
+            <StepNav onBack={prevStep} onNext={nextStep} canNext={!!data.avatarId} />
+          </StepContainer>
+        )}
+
+        {/* Step 6: Preview & Launch */}
+        {step === 5 && (
+          <StepContainer title="Ready to generate your first content" subtitle="Here's a preview of your strategy">
+            <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                {/* Avatar Preview */}
+                <div style={{ width: '120px', aspectRatio: '9/16', background: '#f3f4f6', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
+                  {data.avatarId && avatars.find(a => a.id === data.avatarId)?.image_url && (
+                    <img
+                      src={avatars.find(a => a.id === data.avatarId).image_url}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  )}
+                  {/* Hook text overlay */}
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px', background: 'linear-gradient(transparent, rgba(0,0,0,0.7))' }}>
+                    <p style={{ fontSize: '10px', color: 'white', fontWeight: '500' }}>
+                      "I've been using {data.productName || 'this product'} for a week and..."
+                    </p>
+                  </div>
+                </div>
+
+                {/* Strategy Details */}
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#111827', marginBottom: '8px' }}>{data.productName} Strategy</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: '#6b7280' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Videos to generate:</span>
+                      <span style={{ color: '#111827', fontWeight: '500' }}>1</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Platforms:</span>
+                      <span style={{ color: '#111827', fontWeight: '500' }}>{data.platforms.length > 0 ? data.platforms.join(', ') : 'None connected'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Estimated cost:</span>
+                      <span style={{ color: '#7c3aed', fontWeight: '600' }}>1 credit (~$1)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleComplete}
+              disabled={saving}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: '#7c3aed',
+                color: 'white',
+                fontSize: '15px',
+                fontWeight: '600',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: saving ? 'wait' : 'pointer',
+                opacity: saving ? 0.7 : 1,
+              }}
+            >
+              {saving ? "Setting up..." : "Generate My First Strategy"}
+            </button>
+            <button
+              onClick={prevStep}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: 'transparent',
+                color: '#6b7280',
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                marginTop: '8px',
+              }}
+            >
+              Go back
+            </button>
+          </StepContainer>
+        )}
       </div>
     </div>
   );
 }
 
-// ===========================================
-// STEP 5: GENERATE FIRST VIDEO
-// ===========================================
+function StepContainer({ title, subtitle, children }) {
+  return (
+    <div style={{ background: 'white', borderRadius: '16px', padding: '32px', border: '1px solid #e5e7eb' }}>
+      <h1 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{title}</h1>
+      <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '24px' }}>{subtitle}</p>
+      {children}
+    </div>
+  );
+}
 
-function GenerateStep({ data, onComplete, onBack }) {
-  const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState(null);
+function OptionCard({ title, desc, selected, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%',
+        padding: '16px',
+        background: selected ? '#f5f3ff' : 'white',
+        border: selected ? '2px solid #7c3aed' : '1px solid #e5e7eb',
+        borderRadius: '12px',
+        textAlign: 'left',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
+      <div>
+        <p style={{ fontSize: '15px', fontWeight: '500', color: '#111827' }}>{title}</p>
+        <p style={{ fontSize: '13px', color: '#6b7280' }}>{desc}</p>
+      </div>
+      {selected && (
+        <div style={{ width: '20px', height: '20px', background: '#7c3aed', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ color: 'white', fontSize: '12px' }}>✓</span>
+        </div>
+      )}
+    </button>
+  );
+}
 
-  const generateFirstVideo = async () => {
-    setGenerating(true);
-    setProgress(10);
+function PlatformCard({ name, icon, connected, onConnect }) {
+  return (
+    <div style={{
+      padding: '16px',
+      background: 'white',
+      border: '1px solid #e5e7eb',
+      borderRadius: '12px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ width: '40px', height: '40px', background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {icon === 'tiktok' ? (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#111827"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/></svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111827" strokeWidth="1.5"><rect x="2" y="2" width="20" height="20" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="18" cy="6" r="1.5" /></svg>
+          )}
+        </div>
+        <div>
+          <p style={{ fontSize: '15px', fontWeight: '500', color: '#111827' }}>{name}</p>
+          <p style={{ fontSize: '13px', color: connected ? '#059669' : '#6b7280' }}>
+            {connected ? 'Connected' : 'Not connected'}
+          </p>
+        </div>
+      </div>
+      <button
+        onClick={onConnect}
+        disabled={connected}
+        style={{
+          padding: '8px 16px',
+          background: connected ? '#ecfdf5' : '#7c3aed',
+          color: connected ? '#059669' : 'white',
+          fontSize: '14px',
+          fontWeight: '500',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: connected ? 'default' : 'pointer',
+        }}
+      >
+        {connected ? '✓ Connected' : 'Connect'}
+      </button>
+    </div>
+  );
+}
 
-    try {
-      // Step 1: Generate hooks
-      setProgress(20);
-      const hooksResponse = await fetch("/api/hooks/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productName: data.product.name,
-          productBenefit: data.product.description,
-          niche: data.niche,
-          count: 3,
-        }),
-      });
-      const hooks = await hooksResponse.json();
-      setProgress(40);
-
-      // Step 2: Create campaign
-      const campaignResponse = await fetch("/api/campaigns/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `First Campaign - ${data.product.name}`,
-          productName: data.product.name,
-          productBenefit: data.product.description,
-          avatarId: data.avatarId,
-          hooks: hooks.hooks?.slice(0, 1) || [{ script: `You need to try ${data.product.name}!` }],
-          videoCount: 1,
-          format: "talking_head",
-          duration: 15,
-        }),
-      });
-      const campaign = await campaignResponse.json();
-      setProgress(80);
-
-      // Step 3: Queue for posting (if TikTok connected)
-      if (data.tiktokConnected && campaign.videos?.[0]) {
-        await fetch("/api/videos/post", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            videoId: campaign.videos[0].id,
-            platforms: ["tiktok"],
-            scheduleOptimal: true,
-          }),
-        });
-      }
-
-      setProgress(100);
-      setResult({
-        success: true,
-        campaign: campaign,
-        queued: data.tiktokConnected,
-      });
-
-    } catch (error) {
-      console.error("Generation failed:", error);
-      setResult({
-        success: false,
-        error: error.message,
-      });
-    }
-
-    setGenerating(false);
+function AvatarCard({ avatar, selected, onClick }) {
+  const NICHE_TAGS = {
+    'Sophie': 'Beauty & Lifestyle',
+    'Marcus': 'Tech & Reviews',
+    'Emma': 'Fashion & Style',
+    'James': 'Fitness & Health',
+    'Olivia': 'Home & Living',
+    'Lucas': 'Gaming & Tech',
+    'Ava': 'Skincare & Beauty',
+    'Noah': 'Business & Finance',
+    'Isabella': 'Food & Cooking',
+    'David': 'E-commerce & Reviews',
+    'Maria': 'Wellness & Self-care',
   };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Let's create your first video!</h1>
-      <p className="text-zinc-400 mb-8">
-        We'll generate a hook and create a video ready to post.
-      </p>
-
-      {/* Summary */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
-        <h3 className="font-medium mb-4">Your setup:</h3>
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between">
-            <span className="text-zinc-400">Business type</span>
-            <span className="capitalize">{data.niche?.replace("_", " ")}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-zinc-400">Product</span>
-            <span>{data.product.name}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-zinc-400">TikTok</span>
-            <span className={data.tiktokConnected ? "text-green-400" : "text-zinc-500"}>
-              {data.tiktokConnected ? "Connected ✓" : "Not connected"}
-            </span>
-          </div>
-        </div>
+    <button
+      onClick={onClick}
+      style={{
+        padding: 0,
+        background: 'none',
+        border: selected ? '3px solid #7c3aed' : '2px solid #e5e7eb',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        position: 'relative',
+      }}
+    >
+      <div style={{ aspectRatio: '1', background: '#f3f4f6' }}>
+        {avatar.image_url && (
+          <img src={avatar.image_url} alt={avatar.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        )}
       </div>
-
-      {/* Generate Button / Progress */}
-      {!generating && !result && (
-        <button
-          onClick={generateFirstVideo}
-          className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-medium text-lg"
-        >
-          🚀 Generate My First Video
-        </button>
-      )}
-
-      {generating && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="animate-spin w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full" />
-            <span>Creating your video...</span>
-          </div>
-          <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-purple-500 transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="text-sm text-zinc-400 mt-2">
-            {progress < 30 && "Generating hooks..."}
-            {progress >= 30 && progress < 60 && "Creating campaign..."}
-            {progress >= 60 && progress < 90 && "Generating video..."}
-            {progress >= 90 && "Almost done..."}
-          </div>
+      <div style={{ padding: '8px', background: 'white' }}>
+        <p style={{ fontSize: '12px', fontWeight: '500', color: '#111827' }}>{avatar.name}</p>
+        <p style={{ fontSize: '10px', color: '#6b7280' }}>{NICHE_TAGS[avatar.name] || 'General'}</p>
+      </div>
+      {selected && (
+        <div style={{ position: 'absolute', top: '8px', right: '8px', width: '24px', height: '24px', background: '#7c3aed', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ color: 'white', fontSize: '14px' }}>✓</span>
         </div>
       )}
+    </button>
+  );
+}
 
-      {result && (
-        <div className={`bg-zinc-900 border rounded-xl p-6 ${
-          result.success ? "border-green-500/50" : "border-red-500/50"
-        }`}>
-          {result.success ? (
-            <>
-              <div className="text-center mb-6">
-                <div className="text-4xl mb-4">🎉</div>
-                <h3 className="text-xl font-bold text-green-400">Your first video is generating!</h3>
-                <p className="text-zinc-400 mt-2">
-                  {result.queued
-                    ? "It will be posted to TikTok tonight at the optimal time."
-                    : "Check your dashboard to see it when ready."}
-                </p>
-              </div>
-              <button
-                onClick={onComplete}
-                className="w-full py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium"
-              >
-                Go to Dashboard →
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="text-center mb-6">
-                <div className="text-4xl mb-4">😕</div>
-                <h3 className="text-xl font-bold text-red-400">Something went wrong</h3>
-                <p className="text-zinc-400 mt-2">{result.error}</p>
-              </div>
-              <button
-                onClick={generateFirstVideo}
-                className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-medium"
-              >
-                Try Again
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="flex justify-between mt-8">
+function StepNav({ onBack, onNext, canNext, nextLabel = "Continue" }) {
+  return (
+    <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+      {onBack && (
         <button
           onClick={onBack}
-          disabled={generating}
-          className="px-6 py-3 text-zinc-400 hover:text-white disabled:opacity-50"
+          style={{
+            flex: 1,
+            padding: '12px',
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: '#374151',
+            cursor: 'pointer',
+          }}
         >
-          ← Back
+          Back
         </button>
-      </div>
+      )}
+      <button
+        onClick={onNext}
+        disabled={!canNext}
+        style={{
+          flex: onBack ? 1 : '100%',
+          padding: '12px',
+          background: canNext ? '#7c3aed' : '#e5e7eb',
+          border: 'none',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: '500',
+          color: canNext ? 'white' : '#9ca3af',
+          cursor: canNext ? 'pointer' : 'not-allowed',
+        }}
+      >
+        {nextLabel}
+      </button>
     </div>
   );
 }
